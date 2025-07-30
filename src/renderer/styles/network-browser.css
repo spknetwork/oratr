@@ -1,0 +1,304 @@
+/* Network Browser Styles */
+.network-browser {
+    background: #1e1e1e;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.browser-header {
+    margin-bottom: 20px;
+}
+
+.browser-header h3 {
+    margin: 0 0 15px 0;
+    color: #fff;
+}
+
+.view-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.view-tab {
+    background: #2a2a2a;
+    border: 1px solid #333;
+    color: #999;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.view-tab:hover {
+    background: #333;
+    color: #fff;
+}
+
+.view-tab.active {
+    background: #4CAF50;
+    color: #fff;
+    border-color: #4CAF50;
+}
+
+.browser-controls {
+    background: #2a2a2a;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.filter-controls, .search-controls {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filter-group label {
+    color: #999;
+    font-size: 14px;
+}
+
+.filter-group select {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+
+.search-controls input {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #333;
+}
+
+.browser-stats {
+    display: flex;
+    gap: 30px;
+    background: #2a2a2a;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.stat-item {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.stat-label {
+    color: #999;
+    font-size: 14px;
+}
+
+.stat-value {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.browser-content {
+    min-height: 400px;
+    max-height: 600px;
+    overflow-y: auto;
+    background: #2a2a2a;
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.file-item {
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 15px;
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    transition: all 0.3s ease;
+}
+
+.file-item:hover {
+    border-color: #4CAF50;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+}
+
+.file-item.selected {
+    background: #2a3a2a;
+    border-color: #4CAF50;
+}
+
+.file-checkbox {
+    flex-shrink: 0;
+}
+
+.file-checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.file-info {
+    flex: 1;
+}
+
+.file-name {
+    color: #fff;
+    font-weight: 500;
+    margin-bottom: 5px;
+    word-break: break-all;
+}
+
+.file-meta {
+    display: flex;
+    gap: 15px;
+    color: #999;
+    font-size: 13px;
+}
+
+.file-size {
+    color: #64b5f6;
+}
+
+.file-owner {
+    color: #81c784;
+}
+
+.file-date {
+    color: #999;
+}
+
+.file-stats {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.stat-group {
+    text-align: center;
+}
+
+.stat-group .stat-label {
+    display: block;
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 3px;
+}
+
+.stat-group .stat-value {
+    display: block;
+    font-size: 14px;
+    color: #fff;
+    font-weight: 500;
+}
+
+.file-actions {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.loading {
+    text-align: center;
+    color: #999;
+    padding: 40px;
+}
+
+.no-files {
+    text-align: center;
+    color: #666;
+    padding: 40px;
+}
+
+.error {
+    text-align: center;
+    color: #f44336;
+    padding: 40px;
+}
+
+.browser-pagination {
+    text-align: center;
+    margin-top: 20px;
+}
+
+/* Buttons */
+.btn {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    background: #388E3C;
+}
+
+.btn:disabled {
+    background: #555;
+    cursor: not-allowed;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.btn-primary {
+    background: #4CAF50;
+}
+
+.btn-secondary {
+    background: #555;
+}
+
+.btn-secondary:hover {
+    background: #666;
+}
+
+/* Scrollbar */
+.browser-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.browser-content::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+.browser-content::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 4px;
+}
+
+.browser-content::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}

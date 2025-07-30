@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPK Desktop</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Auth Container -->
+    <div id="auth-container" style="display: none;"></div>
+    
+    <!-- Main App -->
+    <div id="app" style="display: none;">
+        <header>
+            <h1>SPK Desktop</h1>
+            <div class="account-info">
+                <span id="account-name">No account</span>
+                <div id="account-balance" class="balance-mini"></div>
+                <button id="account-btn" onclick="showAccountManager()">Accounts</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('upload')">Video Upload</button>
+                <button class="tab" onclick="showTab('ipfs')">IPFS Node</button>
+                <button class="tab" onclick="showTab('storage')">Storage Node</button>
+                <button class="tab" onclick="showTab('balance')">Balance</button>
+                <button class="tab" onclick="showTab('drive')">My Files</button>
+            </div>
+
+            <!-- Video Upload Tab -->
+            <div id="upload-tab" class="tab-content active">
+                <h2>Upload Video</h2>
+                <div class="upload-area">
+                    <input type="file" id="video-input" accept="video/*" onchange="selectVideo(event)">
+                    <label for="video-input" class="upload-label">
+                        <span>📹 Select Video File</span>
+                    </label>
+                </div>
+                
+                <div id="video-info" class="info-panel" style="display: none;">
+                    <h3>Video Information</h3>
+                    <div id="video-details"></div>
+                </div>
+
+                <div id="upload-options" class="options-panel" style="display: none;">
+                    <!-- Options will be dynamically generated based on video resolution -->
+                </div>
+
+                <div id="upload-progress" class="progress-panel" style="display: none;">
+                    <h3 id="progress-title">Processing Video</h3>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <p id="progress-text">Preparing...</p>
+                    
+                    <!-- Processing Logs -->
+                    <div class="logs-section">
+                        <h4>Processing Logs</h4>
+                        <div id="processing-logs" class="logs-container"></div>
+                    </div>
+                    
+                    <button onclick="cancelUpload()" class="secondary-btn">Cancel</button>
+                </div>
+                
+                <!-- Video Preview -->
+                <div id="video-preview" class="preview-panel" style="display: none;">
+                    <h3>Video Preview</h3>
+                    
+                    <div class="preview-container">
+                        <video id="preview-player" class="video-player" controls style="width: 100%; max-height: 400px;"></video>
+                    </div>
+                    
+                    <div id="transcoding-info" class="transcoding-info"></div>
+                    
+                    <div id="thumbnail-selector" class="thumbnail-selector"></div>
+                    
+                    <div class="preview-info">
+                        <div class="file-info collapsible-section">
+                            <h4 onclick="toggleFileList()" class="collapsible-header">
+                                <span class="collapse-icon">▶</span> Generated Files
+                            </h4>
+                            <div id="generated-files-list" class="file-list collapsed"></div>
+                        </div>
+                        
+                        <div class="m3u8-content collapsible-section">
+                            <h4 onclick="toggleM3U8Content()" class="collapsible-header">
+                                <span class="collapse-icon">▶</span> IPFS Playlists (m3u8)
+                            </h4>
+                            <div class="playlist-viewer collapsed" id="playlist-viewer">
+                                <select id="playlist-selector" onchange="showSelectedPlaylist()" class="playlist-select">
+                                    <option value="master.m3u8">Master Playlist</option>
+                                </select>
+                                <pre id="m3u8-content" class="code-block"></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="upload-method-preview">
+                        <h4>Upload Method</h4>
+                        <label>
+                            <input type="radio" name="preview-upload-method" value="direct" checked>
+                            Direct Upload to Storage Node
+                        </label>
+                        <label>
+                            <input type="radio" name="preview-upload-method" value="gateway">
+                            Upload to SPK Gateway
+                        </label>
+                    </div>
+                    
+                    <div class="preview-actions">
+                        <button onclick="addMoreResolutions()" class="btn btn-secondary">Add Resolutions</button>
+                        <button onclick="retranscode()" class="btn btn-secondary">Re-transcode</button>
+                        <button onclick="proceedToUpload()" class="btn btn-primary">Proceed to Upload</button>
+                    </div>
+                </div>
+                
+                <!-- Upload Stage -->
+                <div id="upload-stage" class="upload-panel" style="display: none;">
+                    <h3>Upload to Storage</h3>
+                    
+                    <div class="upload-options-final">
+                        <div id="upload-method-selection"></div>
+                    </div>
+                    
+                    <div class="upload-progress-final">
+                        <div class="progress-bar">
+                            <div id="upload-progress-fill" class="progress-fill"></div>
+                        </div>
+                        <p id="upload-progress-text">Ready to upload...</p>
+                    </div>
+                    
+                    <div id="upload-logs-container" class="upload-logs" style="display: none;">
+                        <h4>Upload Logs</h4>
+                        <div id="upload-logs" class="logs-container"></div>
+                    </div>
+                    
+                    <div class="upload-actions">
+                        <button onclick="startFinalUpload()" id="start-upload-btn" class="btn btn-primary">Start Upload</button>
+                        <button onclick="backToPreview()" class="btn btn-secondary">Back to Preview</button>
+                    </div>
+                    
+                    <div id="upload-completion-actions" class="completion-actions" style="display: none;">
+                        <h4>Upload Complete!</h4>
+                        <button onclick="resetVideoUpload()" class="btn btn-primary">Upload Another Video</button>
+                        <button onclick="showTab('drive')" class="btn btn-secondary">View My Files</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- IPFS Tab -->
+            <div id="ipfs-tab" class="tab-content">
+                <h2>IPFS Node</h2>
+                
+                <div class="config-panel">
+                    <h3>Configuration</h3>
+                    <div class="config-options">
+                        <label>
+                            <input type="radio" name="ipfs-mode" value="internal" checked onchange="updateIPFSMode(this.value)">
+                            Internal Node (Managed by SPK Desktop)
+                        </label>
+                        <label>
+                            <input type="radio" name="ipfs-mode" value="external" onchange="updateIPFSMode(this.value)">
+                            External Node (Connect to existing)
+                        </label>
+                    </div>
+                    
+                    <div id="ipfs-internal-config" class="config-section">
+                        <div class="form-group">
+                            <label>Data Path:</label>
+                            <input type="text" id="ipfs-data-path" readonly>
+                            <button onclick="chooseIPFSPath()" class="btn btn-sm">Change</button>
+                        </div>
+                        <div class="form-group">
+                            <p class="info-text">Note: IPFS node will stop when you close the app. For 24/7 operation, use an external IPFS node or keep the app running.</p>
+                        </div>
+                        <div class="advanced-options">
+                            <details>
+                                <summary>Advanced Options</summary>
+                                <p class="info-text">To run IPFS as a background service:</p>
+                                <ul class="service-options">
+                                    <li><strong>Linux/Mac:</strong> Install PM2 (<code>npm install -g pm2</code>) and run:<br>
+                                        <code>pm2 start ./src/core/daemon/ipfs-daemon.js --name spk-ipfs</code></li>
+                                    <li><strong>Windows:</strong> Use Task Scheduler or run as a Windows Service (requires admin)</li>
+                                    <li><strong>All platforms:</strong> Use Docker: <code>docker run -d ipfs/kubo</code></li>
+                                </ul>
+                            </details>
+                        </div>
+                    </div>
+                    
+                    <div id="ipfs-external-config" class="config-section" style="display: none;">
+                        <div class="form-group">
+                            <label>Host:</label>
+                            <input type="text" id="ipfs-host" value="127.0.0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Port:</label>
+                            <input type="number" id="ipfs-port" value="5001">
+                        </div>
+                    </div>
+                    
+                    <button onclick="saveIPFSConfig()" class="btn btn-primary">Save Configuration</button>
+                </div>
+                
+                <div class="status-panel">
+                    <p>Status: <span id="ipfs-status">Stopped</span></p>
+                    <button onclick="toggleIPFS()" id="ipfs-toggle">Start IPFS</button>
+                </div>
+                
+                <div id="ipfs-info" class="info-panel" style="display: none;">
+                    <h3>Node Information</h3>
+                    <p>Node ID: <span id="ipfs-id"></span></p>
+                    <p>Version: <span id="ipfs-version"></span></p>
+                    <p>Peers: <span id="ipfs-peers">0</span></p>
+                    <div id="ipfs-addresses"></div>
+                    
+                    <h3>Storage</h3>
+                    <p>Repository Size: <span id="ipfs-repo-size">--</span></p>
+                    <p>Number of Objects: <span id="ipfs-num-objects">--</span></p>
+                    <p>Bandwidth In: <span id="ipfs-bw-in">--</span></p>
+                    <p>Bandwidth Out: <span id="ipfs-bw-out">--</span></p>
+                    
+                    <div class="actions">
+                        <button onclick="runIPFSGC()" class="btn btn-sm">Run Garbage Collection</button>
+                        <button onclick="refreshIPFSInfo()" class="btn btn-sm">Refresh</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Storage Node Tab -->
+            <div id="storage-tab" class="tab-content">
+                <h2>Storage Node</h2>
+                
+                <!-- Setup Section -->
+                <div id="storage-setup" class="setup-panel">
+                    <h3>Storage Node Setup</h3>
+                    <div id="poa-status" class="status-item">
+                        <p>POA Binary: <span id="poa-binary-status">Checking...</span></p>
+                        <button id="install-poa-btn" onclick="installPOA()" style="display: none;">Install POA</button>
+                    </div>
+                    
+                    <div id="storage-registration" class="config-panel">
+                        <h4>SPK Network Registration</h4>
+                        <div id="registration-status" class="status-item">
+                            <p>Registration: <span id="spk-registration-status">Not checked</span></p>
+                            <button onclick="checkRegistration()" class="btn btn-sm">Check Status</button>
+                        </div>
+                        
+                        <div id="register-form" style="display: none;">
+                            <div class="form-group">
+                                <label>Domain (Optional):</label>
+                                <input type="text" id="storage-domain" placeholder="Leave empty for NAT/P2P only">
+                                <small>Only needed if you have a static IP and want to provide gateway services.<br>
+                                Most desktop nodes work fine without a domain using IPFS peer-to-peer.</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Registration Fee:</label>
+                                <input type="number" id="storage-price" value="2000" readonly disabled>
+                                <small>Fixed registration fee: 2000 BROCA</small>
+                            </div>
+                            <button onclick="registerStorageNode()" class="btn btn-primary wallet-action">Register Storage Node</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Configuration removed - using IPFS stats directly -->
+                </div>
+                
+                <!-- Control Section -->
+                <div class="status-panel">
+                    <p>Status: <span id="storage-status">Stopped</span></p>
+                    <button onclick="toggleStorage()" id="storage-toggle">Start Storage Node</button>
+                    <div id="storage-persistent-notice" style="display: none; margin-top: 10px; font-size: 12px; color: #4CAF50;">
+                        <strong>ℹ️ Note:</strong> Storage services run independently of wallet lock status.<br>
+                        Once started, they continue earning rewards even when the wallet times out.
+                    </div>
+                </div>
+                
+                <!-- Info Section -->
+                <div id="storage-info" class="info-panel" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <h3>Storage Statistics</h3>
+                            <p>Space Used: <span id="storage-used">0 MB</span></p>
+                            <p>Space Available: <span id="storage-available">0 GB</span></p>
+                            <p>Files Stored: <span id="storage-files">0</span></p>
+                            <p>Active Contracts: <span id="storage-contracts">0</span></p>
+                            
+                            <h3>Earnings</h3>
+                            <p>Total Earned: <span id="storage-earned">0</span> BROCA</p>
+                            <p>Validations: <span id="storage-validations">0</span></p>
+                            <p>Last Validation: <span id="last-validation">Never</span></p>
+                            
+                            <h3>Network Status</h3>
+                            <p>Connected to SPK: <span id="spk-connected">No</span></p>
+                            <p>WebSocket Status: <span id="ws-status">Disconnected</span></p>
+                            <p>Version: <span id="poa-version">Unknown</span> <span id="update-available"></span></p>
+                        </div>
+                        
+                        <div style="flex: 1; margin-left: 20px;">
+                            <h3>Recent Activity</h3>
+                            <div id="poa-logs" style="background: #000; color: #0f0; padding: 10px; 
+                                        font-family: monospace; font-size: 12px; 
+                                        height: 200px; overflow-y: auto; 
+                                        border: 1px solid #333; border-radius: 4px;">
+                                <div style="color: #666;">Waiting for logs...</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="actions" style="margin-top: 20px;">
+                        <button onclick="refreshStorageInfo()" class="btn btn-sm">Refresh</button>
+                        <button onclick="viewContracts()" class="btn btn-sm">View Contracts</button>
+                        <button onclick="viewFullLogs()" class="btn btn-sm">View Full Logs</button>
+                    </div>
+                    
+                    <!-- Contract Monitoring Section -->
+                    <div class="contract-monitor-section" style="margin-top: 20px;">
+                        <h3>Contract Monitoring</h3>
+                        <div class="monitor-status">
+                            <p>Monitor Status: <span id="monitor-status">Not running</span></p>
+                            <p>Active Contracts: <span id="monitor-contracts">0</span></p>
+                            <p>Pinned Files: <span id="monitor-pinned">0</span></p>
+                            <p>Last Check: <span id="monitor-last-check">Never</span></p>
+                        </div>
+                        <div class="monitor-actions" style="margin-top: 10px;">
+                            <button onclick="checkContractsNow()" class="btn btn-sm btn-primary">Check Now</button>
+                            <button onclick="viewPinnedCIDs()" class="btn btn-sm">View Pinned CIDs</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Network Browser Section -->
+                <div class="network-browser-section" style="margin-top: 30px;">
+                    <h3>Network File Browser</h3>
+                    <div id="network-browser-container">
+                        <!-- Network browser component will be inserted here -->
+                    </div>
+                </div>
+                
+                <!-- Contracts Modal -->
+                <div id="contracts-modal" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <h3>Active Storage Contracts</h3>
+                        <div id="contracts-list"></div>
+                        <button onclick="closeContractsModal()" class="btn btn-sm">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Balance Tab -->
+            <div id="balance-tab" class="tab-content">
+                <h2>Wallet</h2>
+                
+                <!-- Wallet Sub-tabs -->
+                <div class="wallet-tabs">
+                    <button class="wallet-tab active" onclick="showWalletTab('spk')">SPK Network</button>
+                    <button class="wallet-tab" onclick="showWalletTab('hive')">Hive Blockchain</button>
+                </div>
+
+                <!-- SPK Wallet Tab -->
+                <div id="spk-wallet-tab" class="wallet-tab-content active">
+                    <!-- Test Network Toggle -->
+                    <div class="network-toggle">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="testnet-toggle" onchange="toggleTestnet(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>SPK Testnet Mode</span>
+                        <div id="network-status" class="network-status">
+                            <span id="blocks-behind">Loading...</span>
+                        </div>
+                    </div>
+
+                    <!-- Account Value -->
+                    <div class="account-value">
+                        <h3>Estimated Account Value</h3>
+                        <div class="value-display">
+                            <span id="total-usd-value">$0.00</span> USD
+                        </div>
+                    </div>
+
+                    <!-- SPK Token -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon">🪙</div>
+                            <div class="token-info">
+                                <h4>SPK</h4>
+                                <div class="token-badges">
+                                    <span class="badge atomic">ATOMIC</span>
+                                </div>
+                            </div>
+                            <div class="token-balance">
+                                <span id="spk-balance">--</span> SPK
+                            </div>
+                        </div>
+                        <div class="token-actions">
+                            <button onclick="sendToken('SPK')" class="btn btn-primary">Send</button>
+                            <button class="btn btn-secondary" disabled>Market</button>
+                        </div>
+                    </div>
+
+                    <!-- LARYNX Token -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon">⚡</div>
+                            <div class="token-info">
+                                <h4>LARYNX</h4>
+                                <div class="token-badges">
+                                    <span class="badge atomic">ATOMIC</span>
+                                </div>
+                            </div>
+                            <div class="token-balance">
+                                <span id="larynx-balance">--</span> LARYNX
+                            </div>
+                        </div>
+                        <div class="token-actions">
+                            <button onclick="sendToken('LARYNX')" class="btn btn-primary">Send</button>
+                            <div class="dropdown">
+                                <button class="btn btn-secondary dropdown-toggle">More</button>
+                                <div class="dropdown-menu">
+                                    <button onclick="powerUpLarynx()">Power Up</button>
+                                    <button onclick="lockLiquidity()">Lock Liquidity</button>
+                                </div>
+                            </div>
+                            <button onclick="openMarket('LARYNX')" class="btn btn-secondary">Market</button>
+                        </div>
+                    </div>
+
+                    <!-- LARYNX Power -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon warning">⚡</div>
+                            <div class="token-info">
+                                <h4>LARYNX Power</h4>
+                                <div class="token-perks">
+                                    <span class="perk">• Earns SPK governance tokens</span>
+                                    <span class="perk">• Instant Power Up | 4 Week Power Down</span>
+                                    <span class="perk">• Delegate to node service accounts</span>
+                                </div>
+                            </div>
+                            <div class="token-balance">
+                                <span id="larynx-power-balance">--</span> LP
+                            </div>
+                        </div>
+                        <div class="token-actions">
+                            <button onclick="delegateLarynx()" class="btn btn-primary">Delegate</button>
+                            <button onclick="powerDownLarynx()" class="btn btn-warning">Power Down</button>
+                        </div>
+                        
+                        <!-- Power Down Status -->
+                        <div id="powerdown-status" class="powerdown-status" style="display: none;">
+                            <div class="powerdown-info">
+                                <span>Power Down: <span id="powerdown-amount">0</span> LP</span>
+                                <span>Next: <span id="powerdown-next">--</span></span>
+                            </div>
+                            <div class="powerdown-actions">
+                                <button onclick="changePowerDown()" class="btn btn-sm">Change</button>
+                                <button onclick="stopPowerDown()" class="btn btn-sm btn-danger">Stop</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Delegated LARYNX Power -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon success">⚡</div>
+                            <div class="token-info">
+                                <h4>Delegated LARYNX Power</h4>
+                                <div class="delegation-summary">
+                                    <span>Received: <span id="delegation-received">--</span> LP</span>
+                                    <span>Delegated: <span id="delegation-sent">--</span> LP</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="delegation-details">
+                            <details>
+                                <summary>View Details</summary>
+                                <div id="delegation-list" class="delegation-list">
+                                    <!-- Delegation items will be populated here -->
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+
+                    <!-- Locked LARYNX -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon primary">🔒</div>
+                            <div class="token-info">
+                                <h4>Locked LARYNX</h4>
+                                <div class="token-perks">
+                                    <span class="perk">• PoS consensus and DEX transaction collateral</span>
+                                    <span class="perk">• Instant Lock | 4 Week Unlock</span>
+                                    <span class="perk">• Requires operating LARYNX node</span>
+                                </div>
+                            </div>
+                            <div class="token-balance">
+                                <span id="locked-larynx-balance">--</span> LL
+                            </div>
+                        </div>
+                        <div class="token-actions">
+                            <button class="btn btn-secondary" disabled>Options</button>
+                            <button class="btn btn-secondary" disabled>Unlock Liquidity</button>
+                        </div>
+                    </div>
+
+                    <!-- Rewards -->
+                    <div class="rewards-card">
+                        <div class="rewards-header">
+                            <h4>Rewards</h4>
+                            <div class="rewards-info">
+                                <span>Running or delegating to Service Nodes</span>
+                                <span>Split: 50% Liquid | 50% Power</span>
+                            </div>
+                        </div>
+                        <div class="rewards-amount">
+                            <span id="pending-rewards">--</span> LARYNX
+                        </div>
+                        <button onclick="claimRewards()" class="btn btn-primary">Claim Rewards</button>
+                    </div>
+
+                    <!-- Governance Voting -->
+                    <div id="governance-voting" class="governance-card" style="display: none;">
+                        <div class="governance-header">
+                            <h4>Governance Voting</h4>
+                            <div class="vote-power">
+                                <span>Vote Power: <span id="vote-power">0</span>%</span>
+                                <div class="vote-power-bar">
+                                    <div id="vote-power-fill" class="vote-power-fill"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="governance-params">
+                            <!-- Governance parameters will be populated here -->
+                        </div>
+                    </div>
+
+                    <!-- BROCA Status -->
+                    <div class="broca-card">
+                        <div class="broca-header">
+                            <h4>BROCA (Resource Credits)</h4>
+                            <div class="broca-info">
+                                <span>Available: <span id="broca-available">--</span></span>
+                                <span>Regeneration: <span id="broca-regen">--</span>/hour</span>
+                            </div>
+                        </div>
+                        <div class="broca-bar">
+                            <div id="broca-fill" class="broca-fill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hive Wallet Tab -->
+                <div id="hive-wallet-tab" class="wallet-tab-content">
+                    <!-- HIVE Token -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon">🍯</div>
+                            <div class="token-info">
+                                <h4>HIVE</h4>
+                                <div class="token-badges">
+                                    <span class="badge">NATIVE</span>
+                                </div>
+                            </div>
+                            <div class="token-balance">
+                                <span id="hive-balance">--</span> HIVE
+                            </div>
+                        </div>
+                        <div class="token-actions">
+                            <button onclick="sendToken('HIVE')" class="btn btn-primary">Send</button>
+                            <div class="dropdown">
+                                <button class="btn btn-secondary dropdown-toggle">More</button>
+                                <div class="dropdown-menu">
+                                    <button onclick="powerUpHive()">Power Up</button>
+                                    <button onclick="convertToHBD()">Convert to HBD</button>
+                                    <button onclick="transferToSavings('HIVE')">Transfer to Savings</button>
+                                </div>
+                            </div>
+                            <button onclick="openMarket('HIVE')" class="btn btn-secondary">Market</button>
+                        </div>
+                    </div>
+
+                    <!-- HIVE Power -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon warning">⚡</div>
+                            <div class="token-info">
+                                <h4>HIVE Power</h4>
+                                <div class="token-perks">
+                                    <span class="perk">• Increased voting power on content</span>
+                                    <span class="perk">• Increased curation rewards (~<span id="daily-return">0</span>% daily return)</span>
+                                    <span class="perk">• Increased resource credits (~<span id="comment-capacity">0</span> comments)</span>
+                                </div>
+                            </div>
+                            <div class="token-balance">
+                                <span id="hive-power-balance">--</span> HP
+                                <span id="effective-hp" class="effective-hp"></span>
+                            </div>
+                        </div>
+                        <div class="token-actions">
+                            <button onclick="delegateHP()" class="btn btn-primary">Delegate HP</button>
+                            <div class="dropdown">
+                                <button class="btn btn-secondary dropdown-toggle">More</button>
+                                <div class="dropdown-menu">
+                                    <button onclick="delegateRC()">Delegate RC</button>
+                                    <button onclick="powerDownHive()">Power Down</button>
+                                    <button onclick="setWithdrawalRoute()">Withdrawal Route</button>
+                                    <button onclick="claimAccount()">Account Creation Token</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Delegated HIVE Power -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon success">⚡</div>
+                            <div class="token-info">
+                                <h4>Delegated HIVE Power</h4>
+                                <div class="delegation-summary">
+                                    <span>Received: <span id="hp-delegation-received">--</span> HP</span>
+                                    <span>Delegated: <span id="hp-delegation-sent">--</span> HP</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="delegation-tabs">
+                            <button class="del-tab active" onclick="showDelegationTab('hp')">HP</button>
+                            <button class="del-tab" onclick="showDelegationTab('rc')">RC</button>
+                        </div>
+                        <div id="hp-delegations" class="delegation-tab-content active">
+                            <div id="hp-delegation-list" class="delegation-list"></div>
+                        </div>
+                        <div id="rc-delegations" class="delegation-tab-content">
+                            <div class="rc-manabar">
+                                <span>RC Mana: <span id="rc-percentage">--</span>%</span>
+                                <div class="mana-bar">
+                                    <div id="rc-mana-fill" class="mana-fill"></div>
+                                </div>
+                            </div>
+                            <div id="rc-delegation-list" class="delegation-list"></div>
+                        </div>
+                    </div>
+
+                    <!-- HBD Token -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon">💰</div>
+                            <div class="token-info">
+                                <h4>HBD (Hive Backed Dollar)</h4>
+                                <div class="token-badges">
+                                    <span class="badge">STABLE</span>
+                                </div>
+                            </div>
+                            <div class="token-balance">
+                                <span id="hbd-balance">--</span> HBD
+                            </div>
+                        </div>
+                        <div class="token-actions">
+                            <button onclick="sendToken('HBD')" class="btn btn-primary">Send</button>
+                            <button onclick="transferToSavings('HBD')" class="btn btn-secondary">Transfer to Savings</button>
+                        </div>
+                    </div>
+
+                    <!-- HBD Savings -->
+                    <div class="token-card">
+                        <div class="token-header">
+                            <div class="token-icon primary">🔒</div>
+                            <div class="token-info">
+                                <h4>HBD Savings</h4>
+                                <div class="token-perks">
+                                    <span class="perk">• 3-day unlock period for security</span>
+                                    <span class="perk">• Earns ~<span id="savings-apr">20</span>% APR</span>
+                                </div>
+                            </div>
+                            <div class="token-balance">
+                                <span id="hbd-savings-balance">--</span> HBD
+                            </div>
+                        </div>
+                        <div class="token-actions">
+                            <button onclick="withdrawFromSavings()" class="btn btn-primary">Withdraw</button>
+                        </div>
+                    </div>
+
+                    <!-- Pending Rewards -->
+                    <div class="rewards-card">
+                        <div class="rewards-header">
+                            <h4>Pending Author & Curation Rewards</h4>
+                        </div>
+                        <div class="pending-rewards">
+                            <div class="reward-item">
+                                <span>HBD: <span id="pending-hbd">--</span></span>
+                            </div>
+                            <div class="reward-item">
+                                <span>HIVE: <span id="pending-hive">--</span></span>
+                            </div>
+                            <div class="reward-item">
+                                <span>HP: <span id="pending-hp">--</span></span>
+                            </div>
+                        </div>
+                        <button onclick="claimHiveRewards()" class="btn btn-primary">Claim All Rewards</button>
+                    </div>
+
+                    <!-- Recurring Transfers -->
+                    <div class="recurring-card">
+                        <div class="recurring-header">
+                            <h4>Active Recurring Transfers</h4>
+                        </div>
+                        <div id="recurring-transfers" class="recurring-list">
+                            <!-- Recurring transfers will be populated here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Global Actions -->
+                <div class="wallet-actions">
+                    <button onclick="refreshAllBalances()" class="btn btn-secondary">Refresh All</button>
+                    <button onclick="showTransactionHistory()" class="btn btn-secondary">Transaction History</button>
+                </div>
+            </div>
+
+            <!-- Transaction Modals -->
+            <div id="send-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Send <span id="send-token-type">Token</span></h3>
+                    <form id="send-form">
+                        <div class="form-group">
+                            <label>To:</label>
+                            <input type="text" id="send-to" placeholder="Username" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Amount:</label>
+                            <input type="number" id="send-amount" step="0.001" min="0" placeholder="0.000" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Memo (optional):</label>
+                            <input type="text" id="send-memo" placeholder="Optional memo">
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" onclick="closeSendModal()" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Send</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div id="powerup-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Power Up <span id="powerup-token-type">LARYNX</span></h3>
+                    <form id="powerup-form">
+                        <div class="form-group">
+                            <label>Amount:</label>
+                            <input type="number" id="powerup-amount" step="0.001" min="0" placeholder="0.000" required>
+                            <small>Available: <span id="powerup-available">--</span></small>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" onclick="closePowerUpModal()" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Power Up</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div id="powerdown-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Power Down <span id="powerdown-token-type">LARYNX</span></h3>
+                    <form id="powerdown-form">
+                        <div class="form-group">
+                            <label>Amount:</label>
+                            <input type="number" id="powerdown-amount" step="0.001" min="0" placeholder="0.000" required>
+                            <small>Available: <span id="powerdown-available">--</span> LP</small>
+                        </div>
+                        <div class="info-group">
+                            <p>Power down takes 4 weeks with weekly payouts</p>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" onclick="closePowerDownModal()" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-warning">Start Power Down</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div id="delegate-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Delegate <span id="delegate-token-type">LARYNX Power</span></h3>
+                    <form id="delegate-form">
+                        <div class="form-group">
+                            <label>To:</label>
+                            <input type="text" id="delegate-to" placeholder="Username" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Amount:</label>
+                            <input type="number" id="delegate-amount" step="0.001" min="0" placeholder="0.000" required>
+                            <small>Available: <span id="delegate-available">--</span> LP</small>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" onclick="closeDelegateModal()" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Delegate</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Drive Tab -->
+            <div id="drive-tab" class="tab-content">
+                <!-- Vue component will be mounted here -->
+            </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add styles for advanced drive -->
+    <link rel="stylesheet" href="styles/spk-drive-advanced.css">
+    <link rel="stylesheet" href="styles/file-upload-modal.css">
+    
+    <!-- Add Vue 3 for the advanced drive component -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    
+    <!-- HLS.js for video preview -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    
+    <!-- Native FFmpeg transcoding - no WASM dependencies needed -->
+    
+    <script src="components/auth.js"></script>
+    <script src="components/signing-modal.js"></script>
+    <script src="api/storage-api.js"></script>
+    <script src="components/network-browser.js"></script>
+    <script src="components/file-upload-modal.js"></script>
+    <script src="video-processing-native.js"></script>
+    <script src="renderer.js"></script>
+    
+    <!-- Initialize signing modal -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            signingModal.init();
+            // Make signing modal globally available
+            window.signingModal = signingModal;
+        });
+    </script>
+    <!-- <script src="spk-drive-patch.js"></script> Disabled - using advanced component -->
+    <script type="module">
+        import SPKDriveAdvanced from './components/spk-drive-advanced.js';
+        
+        let driveApp = null;
+        
+        // Function to mount the drive component
+        window.mountDriveComponent = function() {
+            const driveTab = document.getElementById('drive-tab');
+            if (!driveTab) return;
+            
+            // Check if already mounted
+            if (driveApp) return;
+            
+            // Clear existing content
+            driveTab.innerHTML = '<div id="spk-drive-mount"></div>';
+            
+            // Mount Vue component
+            if (window.Vue) {
+                driveApp = window.Vue.createApp(SPKDriveAdvanced);
+                driveApp.mount('#spk-drive-mount');
+            }
+        };
+        
+        // Wait for DOM and then set up mounting
+        document.addEventListener('DOMContentLoaded', () => {
+            // Override the showTab function to handle drive mounting
+            const originalShowTab = window.showTab;
+            window.showTab = function(tabName) {
+                originalShowTab(tabName);
+                
+                // Mount drive component when switching to drive tab
+                if (tabName === 'drive') {
+                    setTimeout(() => {
+                        window.mountDriveComponent();
+                    }, 50);
+                }
+            };
+            
+            // Check if drive tab is initially active
+            const driveTab = document.getElementById('drive-tab');
+            if (driveTab && driveTab.classList.contains('active')) {
+                window.mountDriveComponent();
+            }
+        });
+    </script>
+    <script src="debug-helper.js"></script>
+    <script src="broca-fix.js"></script>
+    <script src="upload-spkjs.js"></script>
+</body>
+</html>

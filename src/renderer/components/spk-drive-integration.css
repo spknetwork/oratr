@@ -1,0 +1,494 @@
+/**
+ * SPK Drive Integration Styles
+ */
+
+.spk-drive-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 20px;
+}
+
+/* Drive Header */
+.drive-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.drive-header h2 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 300;
+}
+
+.drive-stats {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 14px;
+    color: #999;
+}
+
+.storage-bar {
+    width: 150px;
+    height: 8px;
+    background-color: #333;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.storage-used {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+    transition: width 0.3s ease;
+}
+
+/* Drive Toolbar */
+.drive-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    gap: 20px;
+}
+
+.search-container {
+    position: relative;
+    flex: 1;
+    max-width: 400px;
+}
+
+.search-container i {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #666;
+    pointer-events: none;
+}
+
+.search-container input {
+    width: 100%;
+    padding: 8px 12px 8px 36px;
+    background-color: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+.drive-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.view-toggle {
+    display: flex;
+    border: 1px solid #444;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.view-toggle button {
+    padding: 6px 10px;
+    background-color: #2a2a2a;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.view-toggle button.active {
+    background-color: #3b82f6;
+    color: white;
+}
+
+/* Breadcrumb */
+.drive-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 15px;
+    font-size: 14px;
+    color: #999;
+}
+
+.drive-breadcrumb span {
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.drive-breadcrumb span:hover {
+    color: #e0e0e0;
+}
+
+/* File Area */
+.drive-files {
+    flex: 1;
+    overflow: auto;
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 20px;
+    position: relative;
+    transition: all 0.2s;
+}
+
+.drive-files.dragging {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-color: #3b82f6;
+    border-style: dashed;
+}
+
+/* Loading State */
+.loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #666;
+}
+
+.loading-spinner i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+/* Empty State */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #666;
+    text-align: center;
+}
+
+.empty-state i {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 0.5rem 0;
+}
+
+.empty-state .text-muted {
+    color: #555;
+    font-size: 14px;
+}
+
+/* Error State */
+.error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #f87171;
+    text-align: center;
+}
+
+.error-state i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+/* File Grid */
+.file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 15px;
+}
+
+.file-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 15px;
+    background-color: #2a2a2a;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    position: relative;
+}
+
+.file-item:hover {
+    background-color: #333;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.file-item.selected {
+    background-color: #3b82f6;
+    border-color: #2563eb;
+}
+
+.file-item.folder i {
+    font-size: 3rem;
+    color: #fbbf24;
+    margin-bottom: 8px;
+}
+
+.file-icon {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+
+.file-icon img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.file-icon i {
+    font-size: 3rem;
+    color: #6b7280;
+}
+
+.file-name {
+    font-size: 13px;
+    word-break: break-word;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.3;
+}
+
+.file-size {
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px;
+}
+
+/* File List */
+.file-list {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.file-list th {
+    text-align: left;
+    padding: 12px;
+    border-bottom: 1px solid #444;
+    font-weight: 500;
+    color: #999;
+    font-size: 13px;
+    background-color: #1a1a1a;
+}
+
+.file-list tr {
+    transition: background-color 0.2s;
+    cursor: pointer;
+}
+
+.file-list tr:hover {
+    background-color: #2a2a2a;
+}
+
+.file-list tr.selected {
+    background-color: #3b82f6;
+}
+
+.file-list td {
+    padding: 12px;
+    border-bottom: 1px solid #333;
+    font-size: 14px;
+}
+
+.file-list i {
+    margin-right: 8px;
+}
+
+.folder-row i {
+    color: #fbbf24;
+}
+
+/* Upload Progress */
+.upload-progress {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 350px;
+    background-color: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+}
+
+.upload-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #444;
+}
+
+.upload-header h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 400;
+}
+
+.upload-header button {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.upload-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid #333;
+}
+
+.upload-item:last-child {
+    border-bottom: none;
+}
+
+.upload-info {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.upload-info .file-name {
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.upload-info .file-size {
+    font-size: 12px;
+    color: #999;
+    margin-left: 10px;
+}
+
+.upload-progress-bar {
+    height: 4px;
+    background-color: #333;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: #3b82f6;
+    transition: width 0.3s ease;
+}
+
+.upload-status {
+    font-size: 12px;
+    color: #999;
+}
+
+/* Context Menu */
+.context-menu {
+    position: fixed;
+    background-color: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    min-width: 160px;
+    padding: 4px 0;
+}
+
+.context-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 16px;
+    background: none;
+    border: none;
+    color: #e0e0e0;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.2s;
+}
+
+.context-menu button:hover {
+    background-color: #333;
+}
+
+.context-menu i {
+    width: 16px;
+    text-align: center;
+    font-size: 14px;
+}
+
+/* Scrollbar */
+.drive-files::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.drive-files::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+.drive-files::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+.drive-files::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .drive-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .search-container {
+        max-width: none;
+        margin-bottom: 10px;
+    }
+    
+    .drive-actions {
+        justify-content: space-between;
+    }
+    
+    .file-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 10px;
+    }
+    
+    .upload-progress {
+        width: calc(100% - 40px);
+        left: 20px;
+        right: 20px;
+    }
+}

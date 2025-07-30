@@ -1,0 +1,264 @@
+/* File Upload Modal Styles */
+
+.file-upload-modal {
+  max-width: 600px;
+  width: 90%;
+}
+
+.upload-method-section {
+  margin-bottom: 20px;
+}
+
+.upload-method-section h3 {
+  color: #fff;
+  margin-bottom: 15px;
+}
+
+.upload-method-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.upload-method-option {
+  display: flex;
+  align-items: center;
+  background: #2a2a2a;
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 15px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.upload-method-option:hover {
+  border-color: #555;
+}
+
+.upload-method-option input[type="radio"] {
+  margin-right: 15px;
+}
+
+.upload-method-option input[type="radio"]:checked + .option-content {
+  color: #4CAF50;
+}
+
+.upload-method-option input[type="radio"]:checked ~ .option-content .option-title {
+  font-weight: 600;
+}
+
+.option-content {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.option-title {
+  font-size: 16px;
+  color: #fff;
+}
+
+.option-desc {
+  font-size: 13px;
+  color: #999;
+}
+
+/* Drop Zone */
+.file-drop-zone {
+  background: #2a2a2a;
+  border: 2px dashed #555;
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin: 20px 0;
+}
+
+.file-drop-zone:hover {
+  border-color: #4CAF50;
+  background: #333;
+}
+
+.file-drop-zone.drag-over {
+  border-color: #4CAF50;
+  background: #3a3a3a;
+  transform: scale(1.02);
+}
+
+.drop-zone-content {
+  pointer-events: none;
+}
+
+.drop-icon {
+  font-size: 48px;
+  margin-bottom: 15px;
+}
+
+.file-drop-zone h3 {
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.file-drop-zone p {
+  color: #999;
+  font-size: 14px;
+}
+
+/* Selected Files */
+.selected-files {
+  margin: 20px 0;
+}
+
+.selected-files h3 {
+  color: #fff;
+  margin-bottom: 15px;
+}
+
+.file-list {
+  max-height: 300px;
+  overflow-y: auto;
+  background: #2a2a2a;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  background: #1e1e1e;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  transition: all 0.3s ease;
+}
+
+.file-item:hover {
+  background: #333;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.file-icon {
+  font-size: 24px;
+}
+
+.file-details {
+  flex: 1;
+}
+
+.file-name {
+  color: #fff;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.file-size {
+  color: #999;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.remove-file {
+  background: #f44336;
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.remove-file:hover {
+  background: #d32f2f;
+  transform: scale(1.1);
+}
+
+.file-summary {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px;
+  background: #1e1e1e;
+  border-radius: 6px;
+  color: #999;
+  font-size: 14px;
+}
+
+.file-summary span {
+  display: flex;
+  gap: 5px;
+}
+
+.file-summary span:last-child {
+  color: #4CAF50;
+  font-weight: 500;
+}
+
+/* Upload Progress */
+.upload-progress-section {
+  margin: 20px 0;
+}
+
+.upload-progress-section h3 {
+  color: #fff;
+  margin-bottom: 15px;
+}
+
+.upload-logs {
+  background: #1e1e1e;
+  border-radius: 6px;
+  padding: 15px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 12px;
+  margin-top: 15px;
+}
+
+.log-entry {
+  margin-bottom: 5px;
+  padding: 3px 0;
+}
+
+.log-info {
+  color: #999;
+}
+
+.log-success {
+  color: #4CAF50;
+}
+
+.log-error {
+  color: #f44336;
+}
+
+/* Scrollbar */
+.file-list::-webkit-scrollbar,
+.upload-logs::-webkit-scrollbar {
+  width: 6px;
+}
+
+.file-list::-webkit-scrollbar-track,
+.upload-logs::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.file-list::-webkit-scrollbar-thumb,
+.upload-logs::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 3px;
+}
+
+.file-list::-webkit-scrollbar-thumb:hover,
+.upload-logs::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
