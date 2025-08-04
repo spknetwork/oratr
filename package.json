@@ -69,6 +69,11 @@
     "directories": {
       "output": "dist"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "disregardfiat",
+      "repo": "spk-desktop"
+    },
     "files": [
       "src/**/*",
       "node_modules/**/*",
