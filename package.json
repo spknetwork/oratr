@@ -28,7 +28,10 @@
     "electron",
     "desktop"
   ],
-  "author": "SPK Network",
+  "author": {
+    "name": "Steven Ettinger",
+    "email": "steven@disregardfiat.tech"
+  },
   "license": "MIT",
   "devDependencies": {
     "@types/jest": "^29.5.12",
