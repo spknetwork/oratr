@@ -41,7 +41,7 @@
     "sinon": "^21.0.0"
   },
   "dependencies": {
-    "@disregardfiat/spk-js": "^1.0.0",
+    "@disregardfiat/spk-js": "^1.0.4",
     "@hiveio/hive-js": "^2.0.8",
     "axios": "^1.6.5",
     "chokidar": "^3.5.3",
