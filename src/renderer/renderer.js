@@ -2,6 +2,7 @@
 console.log('[IMMEDIATE DEBUG] renderer.js file execution started');
 
 const { ipcRenderer } = require('electron');
+const StorageNodeTab = require('./components/storage-node-tab.js');
 
 // Make ipcRenderer available globally to avoid duplicate declarations
 window.ipcRenderer = ipcRenderer;
@@ -23,6 +24,7 @@ window.currentAccount = null;
 let isAuthenticated = false;
 let ipfsAutoDetected = false;
 let storageRefreshInterval = null;
+let storageNodeTabInstance = null;
 
 // Test function to verify onclick works
 window.testClick = () => {
@@ -1826,8 +1828,122 @@ async function updateStorageDashboard() {
         // Debug info
         console.log('Storage Status:', status.storage);
         
+        // Fetch and display pinned files information
+        await updatePinnedFilesInfo();
+        
     } catch (error) {
         console.error('Failed to update storage dashboard:', error);
+    }
+}
+
+// New function to update pinned files information
+async function updatePinnedFilesInfo() {
+    try {
+        // Get stored contracts with file details
+        const contracts = await window.api.storage.getStoredContracts();
+        
+        // Get actual pinned CIDs from IPFS
+        const pinnedCIDs = await window.api.contracts?.getPinnedCIDs?.() || [];
+        
+        // Calculate statistics
+        let totalFiles = 0;
+        let totalSize = 0;
+        let missingFiles = 0;
+        const pinnedSet = new Set(pinnedCIDs);
+        const requiredCIDs = new Set();
+        
+        // Extract all CIDs that should be pinned from contracts
+        contracts.forEach(contract => {
+            if (contract.cid) {
+                requiredCIDs.add(contract.cid);
+                totalFiles++;
+                totalSize += contract.size || 0;
+                
+                if (!pinnedSet.has(contract.cid)) {
+                    missingFiles++;
+                }
+            }
+            
+            // Check files array if present
+            if (contract.files && Array.isArray(contract.files)) {
+                contract.files.forEach(file => {
+                    if (file.cid) {
+                        requiredCIDs.add(file.cid);
+                        totalFiles++;
+                        totalSize += file.size || 0;
+                        
+                        if (!pinnedSet.has(file.cid)) {
+                            missingFiles++;
+                        }
+                    }
+                });
+            }
+        });
+        
+        // Update the Files Stored display with more detail
+        const filesStoredEl = document.getElementById('storage-files');
+        if (filesStoredEl) {
+            const pinnedCount = pinnedSet.size;
+            const syncPercentage = totalFiles > 0 ? Math.round(((totalFiles - missingFiles) / totalFiles) * 100) : 100;
+            
+            filesStoredEl.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <div>${pinnedCount} pinned</div>
+                    <div style="font-size: 0.85em; color: ${missingFiles > 0 ? '#ff6b6b' : '#51cf66'};">
+                        ${missingFiles > 0 ? `Missing: ${missingFiles}` : 'All synced'} (${syncPercentage}%)
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Add a detailed section if it doesn't exist
+        let pinnedDetailsEl = document.getElementById('pinned-files-details');
+        if (!pinnedDetailsEl && document.getElementById('storage-dashboard')) {
+            // Create a new section for pinned files details
+            const dashboard = document.getElementById('storage-dashboard');
+            const detailsSection = document.createElement('div');
+            detailsSection.innerHTML = `
+                <div class="dashboard-section" style="margin-top: 20px;">
+                    <h3>Pinned Files Status</h3>
+                    <div id="pinned-files-details" class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-label">Total Required</div>
+                            <div class="stat-value" id="total-required-files">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Currently Pinned</div>
+                            <div class="stat-value" id="currently-pinned-files">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Missing Files</div>
+                            <div class="stat-value" id="missing-files" style="color: #ff6b6b;">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Total Size</div>
+                            <div class="stat-value" id="pinned-total-size">0 B</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button onclick="viewPinnedCIDs()" class="btn btn-sm">View All Pinned CIDs</button>
+                        <button onclick="syncMissingFiles()" class="btn btn-sm" ${missingFiles === 0 ? 'disabled' : ''}>
+                            Sync Missing Files
+                        </button>
+                    </div>
+                </div>
+            `;
+            dashboard.appendChild(detailsSection);
+        }
+        
+        // Update the detailed stats
+        if (document.getElementById('total-required-files')) {
+            document.getElementById('total-required-files').textContent = totalFiles;
+            document.getElementById('currently-pinned-files').textContent = pinnedSet.size;
+            document.getElementById('missing-files').textContent = missingFiles;
+            document.getElementById('pinned-total-size').textContent = formatBytes(totalSize);
+        }
+        
+    } catch (error) {
+        console.error('Failed to update pinned files info:', error);
     }
 }
 
@@ -1901,6 +2017,11 @@ async function initializeStorageTab() {
         // Initialize network browser (non-blocking)
         initializeNetworkBrowser().catch(error => {
             console.warn('Network browser initialization failed:', error);
+        });
+        
+        // Initialize enhanced StorageNodeTab for better file browsing
+        initializeStorageNodeTab().catch(error => {
+            console.warn('StorageNodeTab initialization failed:', error);
         });
         
     } catch (error) {
@@ -2765,6 +2886,27 @@ async function checkContractsNow() {
     } finally {
         btn.disabled = false;
         btn.textContent = 'Check Now';
+    }
+}
+
+// Function to sync missing files
+async function syncMissingFiles() {
+    try {
+        showNotification('Starting file sync...', 'info');
+        
+        // Trigger a manual sync through the file sync service
+        const result = await window.api.storage.syncFiles?.();
+        
+        if (result && result.success) {
+            showNotification(`Sync complete: ${result.pinned || 0} files pinned`, 'success');
+            // Refresh the dashboard to show updated stats
+            await updateStorageDashboard();
+        } else {
+            showNotification('File sync failed: ' + (result?.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Failed to sync files:', error);
+        showNotification('Failed to sync files: ' + error.message, 'error');
     }
 }
 
@@ -4193,6 +4335,46 @@ async function initializeNetworkBrowser() {
         // Refresh data if storage manager is available
         if (networkBrowser.storageManager) {
             await networkBrowser.refresh();
+        }
+    }
+}
+
+// Initialize enhanced StorageNodeTab
+async function initializeStorageNodeTab() {
+    const container = document.getElementById('storage-node-tab-container');
+    if (!container) {
+        console.warn('StorageNodeTab container not found');
+        return;
+    }
+    
+    // Create StorageNodeTab if not exists
+    if (!storageNodeTabInstance) {
+        try {
+            // Get storage node service and file sync service from window.api
+            const storageNode = window.api?.storage;
+            const fileSyncService = window.api?.fileSync;
+            
+            // Configure with honeygraph URL
+            const settings = await window.api?.settings?.get() || {};
+            const honeygraphUrl = settings.honeygraphUrl || 'https://honeygraph.dlux.io';
+            
+            storageNodeTabInstance = new StorageNodeTab({
+                container: container,
+                fileSyncService: fileSyncService,
+                storageNode: storageNode,
+                spkApiUrl: honeygraphUrl,
+                refreshInterval: 2 * 60 * 1000 // 2 minutes
+            });
+            
+            // Render the component
+            storageNodeTabInstance.render();
+            
+            // Show the container
+            container.style.display = 'block';
+            
+            console.log('StorageNodeTab initialized successfully with Honeygraph URL:', honeygraphUrl);
+        } catch (error) {
+            console.error('Failed to initialize StorageNodeTab:', error);
         }
     }
 }

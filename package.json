@@ -15,9 +15,9 @@
     "lint": "eslint src test --ext .js",
     "lint:fix": "eslint src test --ext .js --fix",
     "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
+    "build:win": "electron-builder --win --publish=never",
+    "build:mac": "electron-builder --mac --publish=never",
+    "build:linux": "electron-builder --linux --publish=never",
     "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
@@ -68,11 +68,6 @@
     "productName": "SPK Desktop",
     "directories": {
       "output": "dist"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "disregardfiat",
-      "repo": "spk-desktop"
     },
     "files": [
       "src/**/*",
