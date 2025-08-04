@@ -43,6 +43,9 @@
     "jest-environment-jsdom": "^30.0.5",
     "sinon": "^21.0.0"
   },
+  "optionalDependencies": {
+    "dmg-license": "^1.0.11"
+  },
   "dependencies": {
     "@disregardfiat/spk-js": "^1.0.4",
     "@hiveio/hive-js": "^2.0.8",
@@ -73,7 +76,6 @@
     "mac": {
       "category": "public.app-category.video",
       "target": [
-        "dmg",
         "zip"
       ]
     },
