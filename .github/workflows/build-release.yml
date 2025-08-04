@@ -32,19 +32,19 @@ jobs:
       - name: Build for Linux
         if: matrix.os == 'ubuntu-latest'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build:linux
 
       - name: Build for Windows
         if: matrix.os == 'windows-latest'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build:win
 
       - name: Build for macOS
         if: matrix.os == 'macos-latest'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build:mac
 
       - name: Upload Linux artifacts
@@ -87,43 +87,78 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: List downloaded artifacts
+        run: |
+          echo "=== Downloaded artifacts structure ==="
+          ls -la
+          echo "=== Linux builds ==="
+          ls -la linux-builds/ || echo "No linux-builds directory"
+          echo "=== Windows builds ==="
+          ls -la windows-builds/ || echo "No windows-builds directory"
+          echo "=== macOS builds ==="
+          ls -la macos-builds/ || echo "No macos-builds directory"
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref }}
           release_name: SPK Desktop ${{ github.ref }}
           draft: false
           prerelease: false
 
+      - name: Find Linux AppImage
+        id: find_appimage
+        run: |
+          APPIMAGE=$(find linux-builds -name "*.AppImage" -type f | head -1)
+          echo "appimage_path=$APPIMAGE" >> $GITHUB_OUTPUT
+          echo "Found AppImage: $APPIMAGE"
+
       - name: Upload Linux AppImage
+        if: steps.find_appimage.outputs.appimage_path != ''
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: linux-builds/*.AppImage
+          asset_path: ${{ steps.find_appimage.outputs.appimage_path }}
           asset_name: SPK-Desktop-Linux.AppImage
           asset_content_type: application/octet-stream
 
+      - name: Find Windows Installer
+        id: find_exe
+        run: |
+          EXE=$(find windows-builds -name "*.exe" -type f | head -1)
+          echo "exe_path=$EXE" >> $GITHUB_OUTPUT
+          echo "Found EXE: $EXE"
+
       - name: Upload Windows Installer
+        if: steps.find_exe.outputs.exe_path != ''
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: windows-builds/*.exe
+          asset_path: ${{ steps.find_exe.outputs.exe_path }}
           asset_name: SPK-Desktop-Windows.exe
           asset_content_type: application/octet-stream
 
+      - name: Find macOS DMG
+        id: find_dmg
+        run: |
+          DMG=$(find macos-builds -name "*.dmg" -type f | head -1)
+          echo "dmg_path=$DMG" >> $GITHUB_OUTPUT
+          echo "Found DMG: $DMG"
+
       - name: Upload macOS DMG
+        if: steps.find_dmg.outputs.dmg_path != ''
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: macos-builds/*.dmg
+          asset_path: ${{ steps.find_dmg.outputs.dmg_path }}
           asset_name: SPK-Desktop-macOS.dmg
           asset_content_type: application/octet-stream
