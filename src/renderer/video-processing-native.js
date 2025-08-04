@@ -816,36 +816,38 @@ function setupUploadMethodSelection() {
     
     // Check direct upload availability
     checkDirectUploadAvailability().then(result => {
-        const directUploadOption = result.available ? `
-            <label class="upload-method">
-                <input type="radio" name="upload-method" value="direct" checked>
-                <strong>Direct Upload to Storage Node</strong>
-                <small>Upload directly to your storage node and earn rewards</small>
-            </label>
-        ` : `
-            <label class="upload-method disabled">
-                <input type="radio" name="upload-method" value="direct" disabled>
-                <strong>Direct Upload to Storage Node</strong>
-                <small>Prerequisites not met: ${result.reason}</small>
-            </label>
-        `;
-        
-        container.innerHTML = `
-            <h4>Choose Upload Method</h4>
-            ${directUploadOption}
-            <label class="upload-method">
-                <input type="radio" name="upload-method" value="standard" ${!result.available ? 'checked' : ''}>
-                <strong>Standard Upload to SPK Network</strong>
-                <small>Upload to public SPK storage gateway</small>
-            </label>
-        `;
+        if (result.available) {
+            // Auto-select direct upload and show minimal UI
+            container.innerHTML = `
+                <div class="upload-method-auto">
+                    <h4>✅ Direct Upload Ready</h4>
+                    <p>Files will be uploaded directly using your storage node</p>
+                    <input type="hidden" name="upload-method" value="direct">
+                    <button id="auto-upload-btn" class="btn btn-primary" onclick="startFinalUpload()">
+                        Upload Video Now
+                    </button>
+                </div>
+            `;
+        } else {
+            // Fallback to standard upload
+            container.innerHTML = `
+                <div class="upload-method-fallback">
+                    <h4>⚠️ Using Standard Upload</h4>
+                    <p>Direct upload not available: ${result.reason}</p>
+                    <input type="hidden" name="upload-method" value="standard">
+                    <button id="standard-upload-btn" class="btn btn-primary" onclick="startFinalUpload()">
+                        Upload Video Now
+                    </button>
+                </div>
+            `;
+        }
     });
 }
 
 async function startFinalUpload() {
-    const uploadMethod = document.querySelector('input[name="upload-method"]:checked')?.value;
+    const uploadMethod = document.querySelector('input[name="upload-method"]')?.value || 'direct';
     if (!uploadMethod) {
-        showNotification('Please select an upload method', 'error');
+        showNotification('Upload method not determined', 'error');
         return;
     }
     
@@ -1217,15 +1219,277 @@ function setupUploadMethodSelection() {
     });
 }
 
+/**
+ * Check if direct upload to storage node is available
+ */
+async function checkDirectUploadAvailability() {
+    try {
+        // Use the same getStatus call that the renderer uses
+        const status = await window.api.storage.getStatus();
+        console.log('[Direct Upload] Storage status:', status);
+        
+        return {
+            available: status && status.running && status.registered,
+            reason: !status ? 'Storage node not initialized' :
+                   !status.running ? 'Storage node not running' :
+                   !status.registered ? 'Storage node not registered' :
+                   'Unknown',
+            status: status
+        };
+    } catch (error) {
+        console.warn('[Video Processing] Direct upload not available:', error);
+        return {
+            available: false,
+            reason: `Error: ${error.message}`,
+            error: error.message
+        };
+    }
+}
+
+// Show dialog to get upload options from user
+async function showUploadOptionsDialog() {
+    // Get default video name from the original file
+    const originalFileName = document.querySelector('#video-input')?.files?.[0]?.name || 'video.mp4';
+    const defaultVideoName = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
+    
+    return new Promise((resolve) => {
+        const dialog = document.createElement('div');
+        dialog.className = 'modal-overlay';
+        dialog.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <h3>Upload Settings</h3>
+                
+                <div class="form-group">
+                    <label for="video-name-input">Video Name:</label>
+                    <input type="text" id="video-name-input" class="form-control" 
+                           value="${defaultVideoName}" 
+                           placeholder="Enter video name">
+                    <small>The name that will appear in your SPK library</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="folder-path-input">Folder Path:</label>
+                    <select id="folder-path-input" class="form-control">
+                        <option value="Videos" selected>Videos (Default)</option>
+                        <option value="Videos/Movies">Videos/Movies</option>
+                        <option value="Videos/Tutorials">Videos/Tutorials</option>
+                        <option value="Videos/Personal">Videos/Personal</option>
+                        <option value="Documents">Documents</option>
+                        <option value="custom">Custom Path...</option>
+                    </select>
+                    <input type="text" id="custom-path-input" class="form-control" 
+                           style="display: none; margin-top: 10px;" 
+                           placeholder="Enter custom path (e.g., MyFolder/Subfolder)">
+                </div>
+                
+                <div class="form-group">
+                    <label for="description-input">Description (optional):</label>
+                    <textarea id="description-input" class="form-control" rows="3" 
+                              placeholder="Enter video description"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="labels-input">Tags/Labels (optional):</label>
+                    <input type="text" id="labels-input" class="form-control" 
+                           placeholder="Enter tags separated by commas (e.g., tutorial, programming, javascript)">
+                </div>
+                
+                <div class="form-group">
+                    <label for="license-input">License (optional):</label>
+                    <select id="license-input" class="form-control">
+                        <option value="">No license specified</option>
+                        <option value="CC0">CC0 - Public Domain</option>
+                        <option value="CC-BY">CC-BY - Attribution</option>
+                        <option value="CC-BY-SA">CC-BY-SA - Attribution ShareAlike</option>
+                        <option value="CC-BY-NC">CC-BY-NC - Attribution NonCommercial</option>
+                        <option value="CC-BY-NC-SA">CC-BY-NC-SA - Attribution NonCommercial ShareAlike</option>
+                        <option value="All Rights Reserved">All Rights Reserved</option>
+                    </select>
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn btn-secondary" onclick="cancelUploadDialog()">Cancel</button>
+                    <button class="btn btn-primary" onclick="confirmUploadDialog()">Upload</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(dialog);
+        
+        // Handle folder path selection
+        const folderSelect = document.getElementById('folder-path-input');
+        const customPathInput = document.getElementById('custom-path-input');
+        
+        folderSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'custom') {
+                customPathInput.style.display = 'block';
+                customPathInput.focus();
+            } else {
+                customPathInput.style.display = 'none';
+            }
+        });
+        
+        // Store the resolve function globally so buttons can access it
+        window._uploadDialogResolve = resolve;
+        window._uploadDialog = dialog;
+        
+        // Define button handlers
+        window.cancelUploadDialog = () => {
+            document.body.removeChild(dialog);
+            resolve(null);
+        };
+        
+        window.confirmUploadDialog = () => {
+            const videoName = document.getElementById('video-name-input').value.trim();
+            const folderPath = folderSelect.value === 'custom' 
+                ? customPathInput.value.trim() 
+                : folderSelect.value;
+            const description = document.getElementById('description-input').value.trim();
+            const labels = document.getElementById('labels-input').value.trim();
+            const license = document.getElementById('license-input').value;
+            
+            if (!videoName) {
+                alert('Please enter a video name');
+                return;
+            }
+            
+            if (folderSelect.value === 'custom' && !customPathInput.value.trim()) {
+                alert('Please enter a custom folder path');
+                return;
+            }
+            
+            document.body.removeChild(dialog);
+            resolve({
+                videoName,
+                folderPath: folderPath || 'Videos',
+                description,
+                labels,
+                license
+            });
+        };
+        
+        // Focus on the video name input
+        setTimeout(() => {
+            document.getElementById('video-name-input').select();
+        }, 100);
+    });
+}
+
+// ONE-CLICK Direct Upload Function - bypasses all selection screens
+async function startDirectUpload() {
+    console.log('[Direct Upload] Starting one-click direct upload...');
+    
+    // First show a dialog to get video name and folder path
+    const uploadOptions = await showUploadOptionsDialog();
+    if (!uploadOptions) {
+        // User cancelled
+        return;
+    }
+    
+    // Hide preview, show upload progress immediately
+    document.getElementById('video-preview').style.display = 'none';
+    document.getElementById('upload-stage').style.display = 'block';
+    document.getElementById('upload-logs-container').style.display = 'block';
+    
+    const progressFill = document.getElementById('upload-progress-fill');
+    const progressText = document.getElementById('upload-progress-text');
+    const uploadContainer = document.getElementById('upload-logs');
+    
+    uploadContainer.innerHTML = '';
+    
+    function addUploadLog(message, type = 'info') {
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry log-${type}`;
+        logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        uploadContainer.appendChild(logEntry);
+        uploadContainer.scrollTop = uploadContainer.scrollHeight;
+    }
+    
+    try {
+        addUploadLog('Starting direct upload to SPK Network...', 'info');
+        progressFill.style.width = '10%';
+        progressText.textContent = 'Preparing files...';
+        
+        // Prepare file data for upload
+        const filesToUpload = [];
+        for (const [filename, fileData] of ipfsReadyFiles) {
+            // fileData is a File object, so we need to read it as buffer
+            const buffer = await fileData.arrayBuffer();
+            filesToUpload.push({
+                name: filename,
+                buffer: buffer,
+                size: fileData.size,
+                type: fileData.type || 'application/octet-stream'
+            });
+        }
+        
+        // Add selected thumbnail if available
+        if (selectedThumbnail && selectedThumbnail.buffer) {
+            filesToUpload.push({
+                name: 'thumbnail.jpg',
+                buffer: selectedThumbnail.buffer,
+                size: selectedThumbnail.buffer.length,
+                type: 'image/jpeg'
+            });
+        }
+        
+        addUploadLog(`Uploading ${filesToUpload.length} files...`, 'info');
+        progressFill.style.width = '20%';
+        progressText.textContent = 'Broadcasting transaction...';
+        
+        // Use the batch upload handler with direct method
+        const result = await window.api.invoke('upload:batch', {
+            files: filesToUpload,
+            options: {
+                uploadMethod: 'direct',
+                videoName: uploadOptions.videoName,
+                folderPath: uploadOptions.folderPath,
+                description: uploadOptions.description || '',
+                license: uploadOptions.license || '',
+                labels: uploadOptions.labels || ''
+            }
+        });
+        
+        if (result.success) {
+            addUploadLog('✅ Upload successful!', 'success');
+            progressFill.style.width = '100%';
+            progressText.textContent = 'Upload complete!';
+            
+            // Show completion actions
+            document.getElementById('upload-completion-actions').style.display = 'block';
+            
+            if (result.data.masterUrl) {
+                addUploadLog(`Master playlist: ${result.data.masterUrl}`, 'success');
+            }
+            
+            addUploadLog(`Transaction ID: ${result.data.transactionId || 'Processing...'}`, 'info');
+            
+        } else {
+            throw new Error(result.error || 'Upload failed');
+        }
+        
+    } catch (error) {
+        console.error('[Direct Upload] Error:', error);
+        addUploadLog(`❌ Upload failed: ${error.message}`, 'error');
+        progressText.textContent = 'Upload failed';
+        
+        // Add retry option
+        const retryBtn = document.createElement('button');
+        retryBtn.textContent = 'Retry Upload';
+        retryBtn.className = 'btn btn-primary';
+        retryBtn.onclick = startDirectUpload;
+        uploadContainer.appendChild(retryBtn);
+    }
+}
+
 // Export key functions to global scope for use from other files
 window.transcodeToHLS = transcodeToHLS;
 window.showVideoPreview = showVideoPreview;
 window.proceedToUpload = proceedToUpload;
-// window.startFinalUpload = startFinalUpload; // Commented out - using spk-js upload instead
+window.startDirectUpload = startDirectUpload; // NEW: One-click upload
 window.retranscode = retranscode;
 window.backToPreview = backToPreview;
 window.selectThumbnail = selectThumbnail;
-// window.uploadCustomThumbnail = uploadCustomThumbnail; // TODO: Implement custom thumbnail upload
 window.checkDirectUploadAvailability = checkDirectUploadAvailability;
 
 console.log('[Video Processing Native] Functions exported successfully:', {

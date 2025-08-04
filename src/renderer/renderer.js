@@ -1,5 +1,14 @@
 // Renderer process JavaScript
+console.log('[IMMEDIATE DEBUG] renderer.js file execution started');
+
 const { ipcRenderer } = require('electron');
+
+// Make ipcRenderer available globally to avoid duplicate declarations
+window.ipcRenderer = ipcRenderer;
+
+console.log('[IMMEDIATE DEBUG] ipcRenderer set up successfully');
+console.log('[IMMEDIATE DEBUG] Current page location:', window.location.href);
+console.log('[IMMEDIATE DEBUG] Document title:', document.title);
 
 // Current state
 let currentTab = 'upload';
@@ -21,18 +30,242 @@ window.testClick = () => {
     alert('Button clicked!');
 };
 
+// Function to update storage tab status indicator
+function updateStorageTabIndicator(isRunning) {
+    const storageTabIndicator = document.querySelector('#storage-tab-button .status-indicator');
+    if (storageTabIndicator) {
+        storageTabIndicator.classList.remove('red', 'green');
+        storageTabIndicator.classList.add('visible');
+        
+        if (isRunning) {
+            storageTabIndicator.classList.add('green');
+        } else {
+            storageTabIndicator.classList.add('red');
+        }
+    }
+}
+
+// Log Management Functions
+async function showLogManagement() {
+    const modal = document.getElementById('log-management-modal');
+    modal.style.display = 'flex';
+    
+    // Update log statistics
+    await updateLogStatistics();
+}
+
+function closeLogManagement() {
+    document.getElementById('log-management-modal').style.display = 'none';
+}
+
+async function updateLogStatistics() {
+    try {
+        // For now, show placeholder values
+        // In a real implementation, you'd get this from the storage node
+        document.getElementById('current-log-size').textContent = '12.4 MB';
+        document.getElementById('total-log-files').textContent = '8 files';
+        document.getElementById('total-log-space').textContent = '89.3 MB';
+    } catch (error) {
+        console.error('Failed to update log statistics:', error);
+    }
+}
+
+async function pruneOldLogs() {
+    try {
+        const result = await window.api.storage.pruneOldLogs();
+        if (result.success) {
+            showNotification('Old logs cleaned successfully', 'success');
+            await updateLogStatistics();
+        } else {
+            showNotification('Failed to clean logs: ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to prune logs:', error);
+        showNotification('Failed to clean logs: ' + error.message, 'error');
+    }
+}
+
+async function emergencyLogCleanup() {
+    const confirmed = confirm(
+        'Emergency cleanup will aggressively remove logs and may affect debugging. ' +
+        'Only use this during network stress or disk space issues. Continue?'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+        const result = await window.api.storage.emergencyLogCleanup();
+        if (result.success) {
+            showNotification('Emergency log cleanup completed', 'success');
+            await updateLogStatistics();
+        } else {
+            showNotification('Emergency cleanup failed: ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error('Emergency cleanup failed:', error);
+        showNotification('Emergency cleanup failed: ' + error.message, 'error');
+    }
+}
+
+// Check storage node status on app startup
+async function checkStorageNodeOnStartup() {
+    console.log('[DEBUG] checkStorageNodeOnStartup() function called');
+    try {
+        // Check if user has a registered storage service
+        console.log('[DEBUG] Current account check:', currentAccount);
+        if (!currentAccount) return;
+        
+        const registrationResult = await window.api.spk.checkRegistration(currentAccount);
+        console.log('[DEBUG] Registration result:', registrationResult);
+        const hasStorageService = registrationResult.success && registrationResult.registered;
+        console.log('[DEBUG] Has storage service:', hasStorageService);
+        
+        if (hasStorageService) {
+            // User has registered storage service, check if POA is running
+            console.log('User has storage service, checking storage node status...');
+            const storageStatus = await window.api.storage.getStatus();
+            console.log('Storage status result:', storageStatus);
+            
+            if (storageStatus && storageStatus.running) {
+                // POA is already running, update indicators
+                storageRunning = true;
+                updateStorageTabIndicator(true);
+                
+                // Start auto-refresh for the storage dashboard
+                if (window.storageRefreshInterval) {
+                    clearInterval(window.storageRefreshInterval);
+                }
+                window.storageRefreshInterval = setInterval(async () => {
+                    try {
+                        await updateStorageDashboard();
+                    } catch (error) {
+                        console.error('Failed to refresh storage dashboard:', error);
+                    }
+                }, 5000);
+                
+                console.log('Detected running storage node on startup');
+            } else if (storageStatus && storageStatus.shouldAutoStart) {
+                // Storage node should auto-start based on previous state
+                updateStorageTabIndicator(false);
+                console.log('Storage node should auto-start (previously registered), starting now...');
+                console.log('Storage status for auto-start:', storageStatus);
+                
+                try {
+                    console.log('Calling window.api.storage.start()...');
+                    const startResult = await window.api.storage.start();
+                    console.log('Storage start result:', startResult);
+                    if (startResult && startResult.success) {
+                        storageRunning = true;
+                        updateStorageTabIndicator(true);
+                        
+                        // Start auto-refresh for the storage dashboard
+                        if (window.storageRefreshInterval) {
+                            clearInterval(window.storageRefreshInterval);
+                        }
+                        window.storageRefreshInterval = setInterval(async () => {
+                            try {
+                                await updateStorageDashboard();
+                            } catch (error) {
+                                console.error('Failed to refresh storage dashboard:', error);
+                            }
+                        }, 5000);
+                        
+                        console.log('Successfully auto-started storage node from previous state');
+                        showNotification('Storage node restored from previous session', 'success');
+                    } else {
+                        console.log('Failed to auto-start storage node:', startResult?.error);
+                        updateStorageTabIndicator(false);
+                    }
+                } catch (error) {
+                    console.error('Error during auto-start:', error);
+                    updateStorageTabIndicator(false);
+                }
+            } else {
+                // User has storage service but POA is not running, try auto-start anyway
+                updateStorageTabIndicator(false);
+                console.log('User has storage service but POA is not running, attempting auto-start...');
+                
+                try {
+                    const startResult = await window.api.storage.start();
+                    if (startResult && startResult.success) {
+                        storageRunning = true;
+                        updateStorageTabIndicator(true);
+                        
+                        // Start auto-refresh for the storage dashboard
+                        if (window.storageRefreshInterval) {
+                            clearInterval(window.storageRefreshInterval);
+                        }
+                        window.storageRefreshInterval = setInterval(async () => {
+                            try {
+                                await updateStorageDashboard();
+                            } catch (error) {
+                                console.error('Failed to refresh storage dashboard:', error);
+                            }
+                        }, 5000);
+                        
+                        console.log('Successfully auto-started storage node');
+                        showNotification('Storage node auto-started', 'success');
+                    } else {
+                        console.log('Failed to auto-start storage node:', startResult?.error);
+                        updateStorageTabIndicator(false);
+                    }
+                } catch (error) {
+                    console.error('Error during auto-start:', error);
+                    updateStorageTabIndicator(false);
+                }
+            }
+        } else {
+            // User doesn't have storage service registered, hide indicator
+            const storageTabIndicator = document.querySelector('#storage-tab .status-indicator');
+            if (storageTabIndicator) {
+                storageTabIndicator.classList.remove('visible');
+            }
+            console.log('User has no storage service registered');
+        }
+    } catch (error) {
+        console.error('[DEBUG] Failed to check storage node status on startup:', error);
+        console.error('[DEBUG] Error stack:', error.stack);
+        // Show red indicator on error
+        updateStorageTabIndicator(false);
+    }
+}
+
 // Network browser instance
 let networkBrowser = null;
 
 // Initialize app
 window.addEventListener('DOMContentLoaded', async () => {
+    console.log('[DEBUG] DOMContentLoaded - initializing app');
     // Initialize auth component
     const authContainer = document.getElementById('auth-container');
     authContainer.style.display = 'block';
+    console.log('[DEBUG] About to initialize auth component');
     await window.authComponent.init(authContainer);
+    console.log('[DEBUG] Auth component initialized');
+    
+    // Check if user is already logged in
+    setTimeout(async () => {
+        console.log('[DEBUG] Checking if user is already authenticated...');
+        try {
+            const activeAccount = await window.api.spk.getActiveAccount();
+            console.log('[DEBUG] Active account check result:', activeAccount);
+            if (activeAccount && activeAccount.username) {
+                console.log('[DEBUG] User is already authenticated, calling showApp()');
+                currentAccount = activeAccount.username;
+                window.currentAccount = currentAccount;
+                updateAccountDisplay();
+                showApp();
+            } else {
+                console.log('[DEBUG] No active account found');
+            }
+        } catch (error) {
+            console.error('[DEBUG] Error checking active account:', error);
+        }
+    }, 1000);
     
     // Listen for authentication events
     window.addEventListener('active-account-changed', (event) => {
+        console.log('[DEBUG] active-account-changed event received:', event.detail);
         currentAccount = event.detail.username;
         window.currentAccount = currentAccount;
         updateAccountDisplay();
@@ -45,6 +278,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         updateWalletLockStatus(false);
         refreshBalance();
         showNotification('Wallet unlocked', 'success');
+        
+        // Close the auth overlay and return to the main app
+        window.authComponent.closeAccountManager();
     });
     
     // Listen for lock events
@@ -111,11 +347,16 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 // Show main app
 function showApp() {
+    console.log('[DEBUG] showApp() function called');
     document.getElementById('auth-container').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     isAuthenticated = true;
     updateWalletLockStatus(false);
     refreshBalance();
+    
+    // Check storage node status on startup
+    console.log('[DEBUG] About to call checkStorageNodeOnStartup()');
+    checkStorageNodeOnStartup();
     
     // If we're on the drive tab, refresh the files
     const driveTab = document.getElementById('drive-tab');
@@ -199,7 +440,12 @@ function showAccountManager() {
     authContainer.style.zIndex = '1000';
     authContainer.style.background = 'rgba(26, 26, 26, 0.95)';
     
-    window.authComponent.showAccountManager();
+    // Check if wallet is locked - if so, show unlock instead of account manager
+    if (!isAuthenticated) {
+        window.authComponent.showUnlock();
+    } else {
+        window.authComponent.showAccountManager();
+    }
 }
 
 // Create IPC API bridge
@@ -248,13 +494,52 @@ window.api = {
         start: () => ipcRenderer.invoke('storage:start'),
         stop: () => ipcRenderer.invoke('storage:stop'),
         getStats: () => ipcRenderer.invoke('storage:getStats'),
+        getStorageStats: () => ipcRenderer.invoke('storage:getStats'),
         getEarnings: () => ipcRenderer.invoke('storage:getEarnings'),
         checkBinary: () => ipcRenderer.invoke('storage:checkBinary'),
         installPOA: () => ipcRenderer.invoke('storage:installPOA'),
         updateConfig: (config) => ipcRenderer.invoke('storage:updateConfig', config),
         getStatus: () => ipcRenderer.invoke('storage:getStatus'),
+        getIPFSStatus: async () => {
+            const ipfsConfig = await ipcRenderer.invoke('ipfs:getConfig');
+            const ipfsStatus = await ipcRenderer.invoke('ipfs:getNodeInfo');
+            return {
+                config: ipfsConfig,
+                running: ipfsStatus && ipfsStatus.id
+            };
+        },
+        getComprehensiveStatus: async () => {
+            const ipfsConfig = await ipcRenderer.invoke('ipfs:getConfig');
+            const ipfsInfo = await ipcRenderer.invoke('ipfs:getNodeInfo');
+            const storageStatus = await ipcRenderer.invoke('storage:getStatus');
+            const activeAccount = await ipcRenderer.invoke('account:getActive');
+            
+            return {
+                ipfs: {
+                    running: ipfsInfo && ipfsInfo.id ? true : false,
+                    config: ipfsConfig,
+                    nodeInfo: ipfsInfo
+                },
+                spk: {
+                    registered: activeAccount && storageStatus && storageStatus.running ? true : false
+                },
+                storage: storageStatus,
+                isFullyOperational: ipfsInfo && ipfsInfo.id && activeAccount && storageStatus && storageStatus.running
+            };
+        },
+        registerNode: async (domain) => {
+            // Get IPFS node ID
+            const ipfsInfo = await ipcRenderer.invoke('ipfs:getNodeInfo');
+            if (!ipfsInfo || !ipfsInfo.id) {
+                throw new Error('IPFS node must be running to register storage node');
+            }
+            const price = 2000; // Fixed registration fee
+            return ipcRenderer.invoke('spk:registerStorage', ipfsInfo.id, domain, price);
+        },
         validateRegistration: (ipfsId, regInfo) => ipcRenderer.invoke('storage:validateRegistration', ipfsId, regInfo),
-        getRecentLogs: (lines) => ipcRenderer.invoke('storage:getRecentLogs', lines)
+        getRecentLogs: (lines) => ipcRenderer.invoke('storage:getRecentLogs', lines),
+        emergencyLogCleanup: () => ipcRenderer.invoke('storage:emergencyLogCleanup'),
+        pruneOldLogs: () => ipcRenderer.invoke('storage:pruneOldLogs')
     },
     spk: {
         registerStorage: (ipfsId, domain, price) => 
@@ -385,7 +670,9 @@ function copyToClipboard(text) {
 window.copyToClipboard = copyToClipboard;
 
 // Tab switching
-function showTab(tabName) {
+async function showTab(tabName) {
+    console.log('Switching to tab:', tabName);
+    
     // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
@@ -395,24 +682,33 @@ function showTab(tabName) {
     });
     
     // Show selected tab
-    document.getElementById(`${tabName}-tab`).classList.add('active');
-    document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+    const tabElement = document.getElementById(`${tabName}-tab`);
+    console.log('Tab element found:', tabElement);
+    if (tabElement) {
+        tabElement.classList.add('active');
+        console.log('Tab element made active');
+    } else {
+        console.error('Tab element not found for:', `${tabName}-tab`);
+    }
+    
+    const buttonElement = document.querySelector(`[onclick="showTab('${tabName}')"]`);
+    if (buttonElement) {
+        buttonElement.classList.add('active');
+    }
     
     currentTab = tabName;
     
     // Run tab-specific initialization
-    if (tabName === 'storage' && currentAccount) {
-        checkPOABinary();
-        checkRegistration();
-        updateStorageInfo(); // Check IPFS status and update controls
-        initializeNetworkBrowser(); // Initialize network browser
-    } else if (tabName === 'ipfs') {
-        // If IPFS was auto-detected and running, just update info
-        if (ipfsRunning) {
-            updateIPFSInfo();
+    if (tabName === 'storage') {
+        if (currentAccount) {
+            await initializeStorageTab();
         } else {
-            // Otherwise check status
-            checkIPFSStatus();
+            // Show wizard even without account
+            const wizard = document.querySelector('.setup-wizard');
+            if (wizard) {
+                wizard.style.display = 'block';
+                console.log('Storage tab opened without account - showing wizard');
+            }
         }
     } else if (tabName === 'drive' && currentAccount) {
         refreshFiles();
@@ -784,23 +1080,86 @@ function closeSendModal() {
 }
 
 // Notification system
-function showNotification(message, type = 'info') {
-    // Create notification element if it doesn't exist
-    let notification = document.getElementById('notification');
-    if (!notification) {
-        notification = document.createElement('div');
-        notification.id = 'notification';
-        notification.className = 'notification';
-        document.body.appendChild(notification);
+// Enhanced Notification System
+function showNotification(message, type = 'info', duration = 5000) {
+    // Clean up old notifications if too many
+    const existingNotifications = document.querySelectorAll('.notification');
+    if (existingNotifications.length >= 3) {
+        existingNotifications[0].remove();
     }
+
+    // Truncate very long messages
+    const maxLength = 120;
+    let displayMessage = message;
+    if (message.length > maxLength) {
+        displayMessage = message.substring(0, maxLength) + '...';
+    }
+
+    // Get icon for notification type
+    const icons = {
+        success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><line x1="15" y1="9" x2="9" y2="15" stroke="currentColor" stroke-width="2"/><line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="2"/></svg>',
+        warning: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>',
+        info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><line x1="12" y1="16" x2="12" y2="12" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="8" r="1" fill="currentColor"/></svg>'
+    };
+
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.style.cssText = `
+        position: fixed !important;
+        top: 20px;
+        right: 20px;
+        max-width: 380px;
+        min-width: 300px;
+        max-height: 120px;
+        width: auto !important;
+        height: auto !important;
+        z-index: 10000;
+    `;
     
-    notification.textContent = message;
-    notification.className = `notification ${type} show`;
-    
-    // Auto-hide after 3 seconds
-    setTimeout(() => {
+    // Build notification HTML
+    notification.innerHTML = `
+        <div class="notification-content">
+            <div class="notification-icon">${icons[type] || icons.info}</div>
+            <div class="notification-message">${displayMessage}</div>
+        </div>
+        <button class="notification-close" aria-label="Close notification">&times;</button>
+    `;
+
+    // Add to document body
+    document.body.appendChild(notification);
+
+    // Close button functionality
+    const closeBtn = notification.querySelector('.notification-close');
+    closeBtn.onclick = (e) => {
+        e.stopPropagation();
         notification.classList.remove('show');
-    }, 3000);
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    };
+
+    // Trigger animation
+    requestAnimationFrame(() => {
+        notification.classList.add('show');
+    });
+
+    // Auto-hide
+    setTimeout(() => {
+        if (notification.classList.contains('show')) {
+            notification.classList.remove('show');
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }
+    }, duration);
+
+    return notification;
 }
 
 // Form handlers
@@ -1212,7 +1571,37 @@ function resetUpload() {
     updateUploadProgress(0, 'Preparing...');
 }
 
-// IPFS operations
+// Storage Node Wizard Functions
+
+// Navigate between wizard steps
+function nextStep(stepNumber) {
+    // Hide all steps
+    document.querySelectorAll('.wizard-step').forEach(step => {
+        step.classList.remove('active');
+    });
+    
+    // Hide all step indicators
+    document.querySelectorAll('.wizard-progress .step').forEach(step => {
+        step.classList.remove('active');
+    });
+    
+    // Show target step
+    document.getElementById(`step-${stepNumber}`).classList.add('active');
+    document.querySelector(`.wizard-progress .step[data-step="${stepNumber}"]`).classList.add('active');
+    
+    // Auto-check registration when entering step 3
+    if (stepNumber === 3) {
+        setTimeout(() => {
+            checkRegistration();
+        }, 100); // Small delay to ensure UI is ready
+    }
+}
+
+function prevStep(stepNumber) {
+    nextStep(stepNumber);
+}
+
+// IPFS operations (now integrated into storage wizard)
 function updateIPFSMode(mode) {
     const internalConfig = document.getElementById('ipfs-internal-config');
     const externalConfig = document.getElementById('ipfs-external-config');
@@ -1226,6 +1615,25 @@ function updateIPFSMode(mode) {
     }
 }
 
+// Storage limit controls
+function updateStorageLimit(valueGB) {
+    document.getElementById('storage-limit-value').textContent = `${valueGB} GB`;
+    // Update available space calculation if needed
+    updateDiskSpaceDisplay();
+}
+
+async function updateDiskSpaceDisplay() {
+    try {
+        const stats = await window.api.storage.getStorageStats();
+        if (stats.spaceAvailable) {
+            const availableGB = Math.floor(stats.spaceAvailable / (1024**3));
+            document.getElementById('disk-space-available').textContent = `${availableGB} GB`;
+        }
+    } catch (error) {
+        console.log('Could not get disk space info');
+    }
+}
+
 async function chooseIPFSPath() {
     // In a real app, this would open a directory picker
     alert('Directory picker not implemented. Using default path.');
@@ -1233,23 +1641,27 @@ async function chooseIPFSPath() {
 
 async function saveIPFSConfig() {
     const mode = document.querySelector('input[name="ipfs-mode"]:checked').value;
+    const storageLimit = document.getElementById('storage-limit-slider').value;
+    
     const config = {
-        externalNode: mode === 'external'
+        externalNode: mode === 'external',
+        maxStorage: parseInt(storageLimit) * 1024 * 1024 * 1024 // Convert GB to bytes
     };
     
     if (mode === 'external') {
         config.host = document.getElementById('ipfs-host').value;
         config.port = parseInt(document.getElementById('ipfs-port').value);
     } else {
-        // Data path would be set via directory picker
-        // For now, using default path
+        config.dataPath = document.getElementById('ipfs-data-path').value;
     }
     
-    const result = await window.api.ipfs.updateConfig(config);
+    const result = await window.api.storage.updateIPFSConfig(config);
     if (result.success) {
-        alert('IPFS configuration saved!');
+        showNotification('IPFS configuration saved!', 'success');
+        // Update disk space display
+        await updateDiskSpaceDisplay();
     } else {
-        alert('Failed to save configuration: ' + result.error);
+        showNotification('Failed to save configuration: ' + result.error, 'error');
     }
 }
 
@@ -1288,18 +1700,255 @@ async function refreshIPFSInfo() {
 
 async function toggleIPFS() {
     if (ipfsRunning) {
-        await window.api.ipfs.stop();
+        await window.api.storage.stopIPFS();
         ipfsRunning = false;
         document.getElementById('ipfs-status').textContent = 'Stopped';
         document.getElementById('ipfs-toggle').textContent = 'Start IPFS';
         document.getElementById('ipfs-info').style.display = 'none';
+        
+        // Disable next button
+        const nextBtn = document.getElementById('ipfs-info').querySelector('.btn-primary');
+        if (nextBtn) nextBtn.style.display = 'none';
     } else {
-        await window.api.ipfs.start();
-        ipfsRunning = true;
-        document.getElementById('ipfs-status').textContent = 'Running';
-        document.getElementById('ipfs-toggle').textContent = 'Stop IPFS';
-        document.getElementById('ipfs-info').style.display = 'block';
-        updateIPFSInfo();
+        try {
+            await window.api.storage.startIPFS();
+            ipfsRunning = true;
+            document.getElementById('ipfs-status').textContent = 'Running';
+            document.getElementById('ipfs-toggle').textContent = 'Stop IPFS';
+            document.getElementById('ipfs-info').style.display = 'block';
+            await updateIPFSInfo();
+            
+            // Show next button when IPFS is running
+            const nextBtn = document.getElementById('ipfs-info').querySelector('.btn-primary');
+            if (nextBtn) nextBtn.style.display = 'inline-block';
+        } catch (error) {
+            showNotification('Failed to start IPFS: ' + error.message, 'error');
+        }
+    }
+}
+
+// Storage Node Wizard Functions
+async function startStorageNode() {
+    try {
+        console.log('Starting storage node...');
+        const result = await window.api.storage.start();
+        console.log('Storage start result:', result);
+        
+        if (!result || !result.success) {
+            throw new Error(result?.error || 'Unknown error starting storage node');
+        }
+        
+        // Wait a moment for process to fully start
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Verify the process actually started
+        const status = await window.api.storage.getStatus();
+        console.log('Storage status after start:', status);
+        
+        if (!status || !status.running) {
+            throw new Error('Storage node process failed to start properly');
+        }
+        
+        // Hide wizard
+        document.querySelector('.setup-wizard').style.display = 'none';
+        
+        // Show network monitor
+        document.getElementById('storage-network-monitor').style.display = 'block';
+        
+        // Show dashboard
+        document.getElementById('storage-dashboard').style.display = 'block';
+        
+        // Update dashboard with current stats
+        await updateStorageDashboard();
+        
+        // Start auto-refresh for real-time updates
+        if (window.storageRefreshInterval) {
+            clearInterval(window.storageRefreshInterval);
+        }
+        window.storageRefreshInterval = setInterval(async () => {
+            try {
+                await updateStorageDashboard();
+            } catch (error) {
+                console.error('Failed to refresh storage dashboard:', error);
+            }
+        }, 5000); // Refresh every 5 seconds
+        
+        showNotification('Storage node started successfully!', 'success');
+        
+    } catch (error) {
+        console.error('Storage node startup error:', error);
+        showNotification('Failed to start storage node: ' + error.message, 'error');
+    }
+}
+
+async function updateStorageDashboard() {
+    try {
+        const status = await window.api.storage.getComprehensiveStatus();
+        
+        // Update network monitor
+        if (status.isFullyOperational) {
+            document.getElementById('active-contracts').textContent = status.node?.contractsStored || 0;
+            document.getElementById('total-earned').textContent = status.node?.estimatedMonthlyEarnings || 0;
+            document.getElementById('storage-usage').textContent = 
+                `${formatBytes(status.storage.used || 0)} / ${formatBytes(status.storage.maxStorage || 0)}`;
+        }
+        
+        // Update dashboard stats
+        document.getElementById('storage-used').textContent = formatBytes(status.storage.used || 0);
+        document.getElementById('storage-available').textContent = formatBytes(status.storage.available || 0);
+        document.getElementById('storage-files').textContent = status.storage.filesStored || 0;
+        document.getElementById('storage-contracts').textContent = status.node?.contractsStored || 0;
+        document.getElementById('storage-earned').textContent = `${status.node?.estimatedMonthlyEarnings || 0}`;
+        document.getElementById('storage-validations').textContent = status.storage?.stats?.validations || 0;
+        document.getElementById('spk-connected').textContent = status.spk.registered ? 'Yes' : 'No';
+        document.getElementById('ipfs-peers').textContent = status.ipfs.nodeInfo?.peers || 0;
+        
+        // Update status indicators with real process info
+        const nodeStatusEl = document.getElementById('node-status');
+        const wsStatusEl = document.getElementById('ws-status');
+        
+        if (status.storage && status.storage.running) {
+            nodeStatusEl.textContent = 'Active';
+            nodeStatusEl.style.color = 'green';
+            wsStatusEl.textContent = 'Connected';
+            wsStatusEl.style.color = 'green';
+            // Update tab indicator to green
+            updateStorageTabIndicator(true);
+        } else {
+            nodeStatusEl.textContent = 'Stopped';
+            nodeStatusEl.style.color = 'red';
+            wsStatusEl.textContent = 'Disconnected';
+            wsStatusEl.style.color = 'red';
+            // Update tab indicator to red
+            updateStorageTabIndicator(false);
+        }
+        
+        // Debug info
+        console.log('Storage Status:', status.storage);
+        
+    } catch (error) {
+        console.error('Failed to update storage dashboard:', error);
+    }
+}
+
+function toggleStorageMonitor() {
+    const monitor = document.getElementById('storage-network-monitor');
+    const isVisible = monitor.style.display !== 'none';
+    monitor.style.display = isVisible ? 'none' : 'block';
+}
+
+function openNetworkBrowser() {
+    // Show network browser section
+    const browserSection = document.querySelector('.network-browser-section');
+    browserSection.scrollIntoView({ behavior: 'smooth' });
+    
+    // Initialize network browser if not already done
+    if (!networkBrowser) {
+        initializeNetworkBrowser().catch(error => {
+            console.warn('Network browser initialization failed:', error);
+        });
+    }
+}
+
+async function initializeStorageTab() {
+    try {
+        console.log('Initializing storage tab...');
+        
+        // Ensure wizard is visible by default
+        const wizard = document.querySelector('.setup-wizard');
+        if (wizard) {
+            wizard.style.display = 'block';
+            console.log('Setup wizard made visible');
+        } else {
+            console.error('Setup wizard not found in DOM');
+        }
+        
+        // Check POA binary status
+        await checkPOABinary();
+        
+        // Load IPFS configuration
+        await loadIPFSConfig();
+        
+        // Update disk space display
+        await updateDiskSpaceDisplay();
+        
+        // Check if storage node is already running
+        const status = await window.api.storage.getComprehensiveStatus();
+        console.log('Storage status:', status);
+        
+        if (status.isFullyOperational) {
+            // Hide wizard and show dashboard
+            document.querySelector('.setup-wizard').style.display = 'none';
+            document.getElementById('storage-network-monitor').style.display = 'block';
+            document.getElementById('storage-dashboard').style.display = 'block';
+            await updateStorageDashboard();
+        } else {
+            // Show wizard
+            document.querySelector('.setup-wizard').style.display = 'block';
+            document.getElementById('storage-network-monitor').style.display = 'none';
+            document.getElementById('storage-dashboard').style.display = 'none';
+            
+            // Determine which step to show
+            if (!status.ipfs.running) {
+                nextStep(1); // IPFS step
+            } else if (!status.spk.registered) {
+                nextStep(3); // Registration step
+            } else {
+                nextStep(4); // Final step
+            }
+        }
+        
+        // Initialize network browser (non-blocking)
+        initializeNetworkBrowser().catch(error => {
+            console.warn('Network browser initialization failed:', error);
+        });
+        
+    } catch (error) {
+        console.error('Failed to initialize storage tab:', error);
+        showNotification('Failed to initialize storage tab: ' + error.message, 'error');
+    }
+}
+
+async function loadIPFSConfig() {
+    try {
+        const config = await window.api.storage.getIPFSStatus();
+        
+        if (config.config) {
+            // Update UI elements
+            document.getElementById('ipfs-data-path').value = config.config.dataPath || '';
+            
+            if (config.config.externalNode) {
+                document.querySelector('input[name="ipfs-mode"][value="external"]').checked = true;
+                updateIPFSMode('external');
+                document.getElementById('ipfs-host').value = config.config.host || '127.0.0.1';
+                document.getElementById('ipfs-port').value = config.config.port || 5001;
+            } else {
+                document.querySelector('input[name="ipfs-mode"][value="internal"]').checked = true;
+                updateIPFSMode('internal');
+            }
+            
+            // Update storage limit slider
+            const maxStorageGB = Math.floor((config.config.maxStorage || 100 * 1024**3) / (1024**3));
+            document.getElementById('storage-limit-slider').value = maxStorageGB;
+            document.getElementById('storage-limit-value').textContent = `${maxStorageGB} GB`;
+        }
+        
+        // Update IPFS status
+        if (config.running) {
+            ipfsRunning = true;
+            document.getElementById('ipfs-status').textContent = 'Running';
+            document.getElementById('ipfs-toggle').textContent = 'Stop IPFS';
+            document.getElementById('ipfs-info').style.display = 'block';
+            await updateIPFSInfo();
+        } else {
+            ipfsRunning = false;
+            document.getElementById('ipfs-status').textContent = 'Stopped';
+            document.getElementById('ipfs-toggle').textContent = 'Start IPFS';
+            document.getElementById('ipfs-info').style.display = 'none';
+        }
+        
+    } catch (error) {
+        console.error('Failed to load IPFS config:', error);
     }
 }
 
@@ -1629,6 +2278,12 @@ async function checkRegistration() {
         statusEl.innerHTML = `<span style="color: green">✓ Service Registered</span>`;
         registerForm.style.display = 'none';
         
+        // Enable the next step button
+        const nextBtn = document.getElementById('registration-next-btn');
+        if (nextBtn) {
+            nextBtn.disabled = false;
+        }
+        
         // Get IPFS info to validate registration
         try {
             const ipfsInfo = await window.api.ipfs.getNodeInfo();
@@ -1645,6 +2300,11 @@ async function checkRegistration() {
                     statusEl.innerHTML += `<br><small style="color: #888">You may need to update your registration or use the registered IPFS node</small>`;
                 } else {
                     statusEl.innerHTML += `<br><span style="color: green">✓ IPFS ID matches</span>`;
+                    
+                    // Registration is complete and valid - automatically advance to step 4
+                    setTimeout(() => {
+                        nextStep(4);
+                    }, 1500); // Give user time to see the success message
                 }
                 
                 // Show registration details
@@ -1663,6 +2323,12 @@ async function checkRegistration() {
         statusEl.innerHTML = '<span style="color: orange">No storage service registered</span>';
         statusEl.innerHTML += '<br><small style="color: #888">Register your IPFS node to earn storage rewards</small>';
         registerForm.style.display = 'block';
+        
+        // Disable the next step button
+        const nextBtn = document.getElementById('registration-next-btn');
+        if (nextBtn) {
+            nextBtn.disabled = true;
+        }
     }
 }
 
@@ -1688,17 +2354,24 @@ async function registerStorageNode() {
     const nodeDomain = domain || '';
     
     const confirmMsg = domain 
-        ? `Register storage node with domain ${domain}\n\nRegistration fee: ${price} BROCA (one-time)`
-        : `Register P2P storage node (no public gateway)\n\nRegistration fee: ${price} BROCA (one-time)\n\nNote: P2P nodes work behind NAT and earn rewards for storing files.`;
+        ? `Register storage node with domain ${domain}\n\nRegistration fee: ${price} LARYNX (one-time)`
+        : `Register P2P storage node (no public gateway)\n\nRegistration fee: ${price} LARYNX (one-time)\n\nNote: P2P nodes work behind NAT and earn rewards for storing files.`;
     
     if (!confirm(confirmMsg)) return;
     
-    const result = await window.api.spk.registerStorage(ipfsInfo.id, nodeDomain, price);
-    if (result.success) {
-        showNotification('Storage node registered successfully!', 'success');
-        await checkRegistration();
-    } else {
-        alert('Registration failed: ' + result.error);
+    try {
+        const result = await window.api.spk.registerStorage(ipfsInfo.id, nodeDomain, price);
+        if (result.success) {
+            showNotification('Storage node registered successfully!', 'success');
+            await checkRegistration();
+            
+            // Enable next button
+            document.getElementById('registration-next-btn').disabled = false;
+        } else {
+            showNotification('Failed to register storage node: ' + result.error, 'error');
+        }
+    } catch (error) {
+        showNotification('Failed to register storage node: ' + error.message, 'error');
     }
 }
 
@@ -2334,7 +3007,7 @@ async function updateVideoUploadOptions(videoInfo, brocaCost) {
         </div>
         
         <div class="upload-actions">
-            <button onclick="startUpload()" class="btn btn-primary">Start Upload</button>
+            <button onclick="startUpload()" class="btn btn-primary" id="start-upload-btn">Transcode</button>
             <button onclick="cancelVideoSelection()" class="btn btn-secondary">Cancel</button>
         </div>
     `;
@@ -2343,13 +3016,25 @@ async function updateVideoUploadOptions(videoInfo, brocaCost) {
     document.querySelectorAll('input[name="upload-choice"]').forEach(radio => {
         radio.addEventListener('change', function() {
             const transcodingSection = document.getElementById('transcoding-section');
+            const startBtn = document.getElementById('start-upload-btn');
+            
             if (this.value === 'transcode' || this.value === 'both') {
                 transcodingSection.style.display = 'block';
+                startBtn.textContent = 'Transcode';
             } else {
                 transcodingSection.style.display = 'none';
+                startBtn.textContent = 'Upload';
             }
         });
     });
+    
+    // Auto-check direct upload if storage node is running
+    if (directUploadCheck.available) {
+        const directUploadCheckbox = document.getElementById('direct-upload');
+        if (directUploadCheckbox) {
+            directUploadCheckbox.checked = true;
+        }
+    }
 }
 
 function cancelVideoSelection() {
@@ -3493,13 +4178,22 @@ async function initializeNetworkBrowser() {
     if (!networkBrowser) {
         networkBrowser = new NetworkBrowser(container);
         
-        // Wait for storage API to be ready
+        // Wait for storage API to be ready and set it before initializing
         if (window.storageAPI) {
             await networkBrowser.setStorageManager(window.storageAPI);
+        } else {
+            // Retry setting storage manager after a brief delay
+            setTimeout(async () => {
+                if (window.storageAPI && networkBrowser) {
+                    await networkBrowser.setStorageManager(window.storageAPI);
+                }
+            }, 100);
         }
     } else {
-        // Refresh data
-        await networkBrowser.refresh();
+        // Refresh data if storage manager is available
+        if (networkBrowser.storageManager) {
+            await networkBrowser.refresh();
+        }
     }
 }
 

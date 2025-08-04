@@ -31,7 +31,7 @@ async function initializeSPKDrive(username) {
         // Get or create SPK instance
         if (!spkInstance || spkInstance.account.username !== username) {
             // Initialize SPK with Honeygraph support
-            const SPK = window.SPK || (await import('@spknetwork/spk-js')).default;
+            const SPK = window.SPK || (await import('@disregardfiat/spk-js')).default;
             spkInstance = new SPK(username, {
                 node: window.spkNode || 'https://spkinstant.hivehoneycomb.com',
                 honeygraphUrl: 'https://honeygraph.dlux.io',

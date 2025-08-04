@@ -4,7 +4,7 @@
 
 1. **Import Path**: Changed from local file path to npm package
    - Old: `require('../../../../spk-js/src/index.js')`
-   - New: `require('@spknetwork/spk-js')`
+   - New: `require('@disregardfiat/spk-js')`
 
 2. **SPK Constructor**: Updated to match new API
    - Old: `new SPK({ account: username, baseURL: node })`
@@ -19,7 +19,7 @@
    - `spkInstance.file.renewContract()` → `spkInstance.renewContract()`
 
 5. **BROCA Calculation**: Updated to use BrocaCalculator from spk-js
-   - Import: `const { BrocaCalculator } = require('@spknetwork/spk-js')`
+   - Import: `const { BrocaCalculator } = require('@disregardfiat/spk-js')`
    - Calculate available: `BrocaCalculator.available(account)`
 
 6. **Electron Sandbox**: Added `--no-sandbox` flag to start script

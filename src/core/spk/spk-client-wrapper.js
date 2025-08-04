@@ -5,7 +5,7 @@
  * while delegating all SPK network operations to the core library.
  */
 
-const SPK = require('@spknetwork/spk-js').default;
+const SPK = require('@disregardfiat/spk-js').default;
 const { ipcMain } = require('electron');
 const { EventEmitter } = require('events');
 const logger = require('../../utils/logger');
@@ -17,6 +17,12 @@ class SPKClientWrapper extends EventEmitter {
     this.accountManager = new AccountManager();
     this.spkInstances = new Map(); // Map of username -> SPK instance
     this.currentUser = null;
+    
+    // Add default config to prevent undefined errors
+    this.config = {
+      spkNode: 'https://spktest.dlux.io',
+      network: 'testnet'
+    };
   }
 
   async initialize() {
@@ -85,6 +91,15 @@ class SPKClientWrapper extends EventEmitter {
       maxRetries: 3
     });
 
+    // Initialize the SPK instance
+    try {
+      await spk.init();
+      logger.info(`SPK instance initialized for ${username}`);
+    } catch (error) {
+      logger.warn(`SPK initialization failed for ${username}:`, error.message);
+      // Continue anyway - some features may still work
+    }
+
     // Store instance
     this.spkInstances.set(username, spk);
     return spk;
@@ -151,7 +166,85 @@ class SPKClientWrapper extends EventEmitter {
     const spk = await this.getSpkInstance(this.currentUser);
     const fileObjects = await this.prepareFilesForUpload(files);
     
-    return spk.file.directUpload(fileObjects, options);
+    return spk.directUpload(fileObjects, options);
+  }
+
+  /**
+   * Direct upload files to network using spk-js DirectUpload
+   * This bypasses the normal upload pipeline
+   */
+  async directUploadFiles(options) {
+    console.log('🔄 [SPKWrapper] directUploadFiles called with options:');
+    console.log('📝 CIDs count:', options.cids?.length);
+    console.log('📊 Sizes count:', options.sizes?.length);
+    console.log('🔖 Upload ID:', options.id);
+    console.log('📋 Metadata length:', options.metadata?.length);
+    
+    if (!this.currentUser) {
+      throw new Error('No current user set');
+    }
+
+    console.log('👤 [SPKWrapper] Current user:', this.currentUser);
+    
+    const spk = await this.getSpkInstance(this.currentUser);
+    console.log('🔌 [SPKWrapper] SPK instance obtained');
+    console.log('📞 [SPKWrapper] spk.directUploadFiles type:', typeof spk.directUploadFiles);
+    console.log('🔍 [SPKWrapper] Available SPK methods with "direct":', 
+      Object.getOwnPropertyNames(spk).filter(name => 
+        typeof spk[name] === 'function' && name.toLowerCase().includes('direct')
+      )
+    );
+    
+    try {
+      console.log('🚀 [SPKWrapper] Calling spk.directUploadFiles...');
+      const result = await spk.directUploadFiles(options);
+      console.log('✅ [SPKWrapper] Direct upload result:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ [SPKWrapper] Direct upload error:', error);
+      console.error('❌ [SPKWrapper] Error stack:', error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Batch direct upload multiple file sets
+   */
+  async batchDirectUpload(uploads) {
+    if (!this.currentUser) {
+      throw new Error('No current user set');
+    }
+
+    const spk = await this.getSpkInstance(this.currentUser);
+    return spk.batchDirectUpload(uploads);
+  }
+
+  /**
+   * Check if CIDs already exist on network
+   */
+  async checkExistingFiles(cids) {
+    if (!this.currentUser) {
+      throw new Error('No current user set');
+    }
+
+    const spk = await this.getSpkInstance(this.currentUser);
+    return spk.checkExistingFiles(cids);
+  }
+
+  /**
+   * Calculate direct upload cost
+   */
+  calculateDirectUploadCost(sizes) {
+    // Simple cost calculation: 1 BROCA per byte
+    return sizes.reduce((sum, size) => sum + size, 0);
+  }
+
+  /**
+   * Create metadata for direct upload
+   */
+  createDirectUploadMetadata(fileCount, tags = []) {
+    const SPK = require('@disregardfiat/spk-js').default;
+    return SPK.createDirectUploadMetadata(fileCount, tags);
   }
 
   /**
@@ -196,7 +289,7 @@ class SPKClientWrapper extends EventEmitter {
       }, 0);
       
       // Use BrocaCalculator from spk-js
-      const { BrocaCalculator } = require('@spknetwork/spk-js');
+      const { BrocaCalculator } = require('@disregardfiat/spk-js');
       const cost = BrocaCalculator.cost(totalSize, duration);
       
       return {
@@ -222,13 +315,14 @@ class SPKClientWrapper extends EventEmitter {
   /**
    * Register storage node using spk-js
    */
-  async registerStorageNode(config) {
+  async registerStorageNode(ipfsId, domain, price = 2000, options = {}) {
     if (!this.currentUser) {
       throw new Error('No current user set');
     }
 
     const spk = await this.getSpkInstance(this.currentUser);
-    return spk.account.registerStorageNode(config);
+    // Use the storage service registration method, not blockchain node registration
+    return spk.registerStorageService(ipfsId, domain, price);
   }
 
   /**
@@ -440,11 +534,25 @@ class SPKClientWrapper extends EventEmitter {
   async checkUserServices(username) {
     try {
       const spk = await this.getSpkInstance(username);
-      const services = await spk.account.api.getServices(username);
+      
+      // Get account data directly to check for storage field
+      const accountData = await spk.account.api.get(`/@${username}`);
+      
+      // Check if account has storage field (IPFS node registration)
+      const services = {};
+      if (accountData && accountData.storage) {
+        services.IPFS = {};
+        services.IPFS[accountData.storage] = {
+          i: accountData.storage, // IPFS ID
+          a: accountData.api || null, // API domain if any
+          b: username, // account
+          c: accountData.price || 2000 // price
+        };
+      }
       
       return {
         success: true,
-        services: services || {}
+        services: services
       };
     } catch (error) {
       logger.error(`Failed to check services for ${username}:`, error);

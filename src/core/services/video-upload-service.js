@@ -311,20 +311,21 @@ class VideoUploadService extends EventEmitter {
         arrayBuffer: async () => f.content
       }));
       
-      // Create metadata for the upload
-      const uploadMetadata = {
-        type: 'video',
-        resolutions: Object.keys(resolutionData),
-        duration: metadata.duration,
-        thumbnail: thumbnail?.cid,
-        masterPlaylist: masterHash
-      };
+      // Create metadata for the upload - minimal, no custom fields
+      const uploadMetadata = options.metadata || {};
       
       // Determine upload method
       let uploadResult;
       
-      if (uploadOptions.uploadMethod === 'direct' && this.directUploadService) {
-        // Use direct upload service (pins to local IPFS and broadcasts to network)
+      console.log('🔄 [VideoUpload] Upload method determination:');
+      console.log('📋 uploadOptions.uploadMethod:', uploadOptions.uploadMethod);
+      console.log('🔌 this.spkClient available:', !!this.spkClient);
+      console.log('⚙️ this.directUploadService available:', !!this.directUploadService);
+      console.log('🔧 this.integratedStorage available:', !!this.integratedStorage);
+      
+      if (uploadOptions.uploadMethod === 'direct' && this.spkClient) {
+        // Use spk-js direct upload - bypasses normal upload pipeline
+        console.log('✅ [VideoUpload] Using direct upload method via spk-js');
         this.emit('progress', { 
           uploadId, 
           stage: 'finalizing', 
@@ -332,28 +333,119 @@ class VideoUploadService extends EventEmitter {
           message: 'Using direct upload to SPK Network...' 
         });
         
-        // Prepare files for direct upload
-        const directUploadFiles = filesToUpload.map(f => ({
-          name: f.filename,
-          content: f.content,
-          size: f.size,
-          type: this.getMimeType(f.filename)
-        }));
+        // Prepare direct upload options with CIDs and sizes
+        const cids = [];
+        const sizes = [];
         
-        uploadResult = await this.directUploadService.directUploadVideo({
-          files: directUploadFiles,
-          masterPlaylistCID: masterHash,
-          thumbnail: thumbnail ? { cid: thumbnail.cid } : null,
-          resolutions: resolutionData
-        }, {
-          metadata: uploadMetadata
+        // Add all segment and playlist files
+        for (const [filename, fileData] of Object.entries(allHashes)) {
+          cids.push(fileData.hash);
+          sizes.push(fileData.content.length);
+        }
+        
+        // Add master playlist
+        cids.push(masterHash);
+        sizes.push(masterPlaylist.length);
+        
+        // Add thumbnail if available
+        if (thumbnail) {
+          cids.push(thumbnail.cid);
+          sizes.push(thumbnail.buffer.length);
+        }
+        
+        // Create metadata array for direct upload
+        // Get video name and folder path from options
+        const videoName = uploadOptions.videoName || uploadOptions.title || path.basename(videoPath, path.extname(videoPath));
+        const folderPath = uploadOptions.folderPath || 'Videos'; // Default to Videos folder
+        
+        // Build metadata array - one entry per file
+        const metadataArray = [];
+        let masterPlaylistIndex = -1;
+        let thumbnailIndex = -1;
+        
+        // Add metadata for segments and playlists
+        let fileIndex = 0;
+        for (const [filename, fileData] of Object.entries(allHashes)) {
+          if (filename === 'master.m3u8') {
+            masterPlaylistIndex = fileIndex;
+          }
+          // All transcoded files are hidden by default
+          metadataArray.push({
+            name: '',
+            ext: '',
+            path: '',
+            flag: 2 // hidden
+          });
+          fileIndex++;
+        }
+        
+        // Add metadata for master playlist
+        masterPlaylistIndex = fileIndex;
+        metadataArray.push({
+          name: videoName,
+          ext: 'm3u8',
+          path: `${folderPath}/${videoName}.m3u8`,
+          description: uploadOptions.description || '',
+          thumbnail: thumbnail ? '' : '', // Will be set after we know the thumbnail CID
+          flag: 1, // visible
+          license: uploadOptions.license || '',
+          labels: uploadOptions.labels || ''
         });
+        fileIndex++;
+        
+        // Add metadata for thumbnail if available
+        if (thumbnail) {
+          thumbnailIndex = fileIndex;
+          metadataArray.push({
+            name: '',
+            ext: '',
+            path: '',
+            flag: 2 // hidden
+          });
+          
+          // Update master playlist metadata with thumbnail CID
+          metadataArray[masterPlaylistIndex].thumbnail = thumbnail.cid;
+        }
+        
+        const directUploadOptions = {
+          cids,
+          sizes,
+          id: `video_${uploadId}`,
+          metadata: metadataArray
+        };
+        
+        console.log('📦 [VideoUpload] Direct upload options prepared:');
+        console.log('📝 CIDs:', cids.slice(0, 3), '... total:', cids.length);
+        console.log('📊 Sizes:', sizes.slice(0, 3), '... total:', sizes.length);
+        console.log('🔖 Upload ID:', directUploadOptions.id);
+        console.log('📋 Video name:', videoName);
+        console.log('📁 Folder path:', folderPath);
+        console.log('📋 Metadata entries:', metadataArray.length);
+        console.log('🎥 Master playlist metadata:', metadataArray[masterPlaylistIndex]);
+        
+        console.log('🚀 [VideoUpload] Calling spkClient.directUploadFiles...');
+        console.log('🔍 spkClient methods:', Object.getOwnPropertyNames(this.spkClient).filter(name => typeof this.spkClient[name] === 'function' && name.includes('direct')));
+        console.log('📞 directUploadFiles type:', typeof this.spkClient.directUploadFiles);
+        
+        try {
+          uploadResult = await this.spkClient.directUploadFiles(directUploadOptions);
+          console.log('✅ [VideoUpload] Direct upload completed:', uploadResult);
+        } catch (directUploadError) {
+          console.error('❌ [VideoUpload] Direct upload error:', directUploadError);
+          throw directUploadError;
+        }
+        
+        // Check if upload was successful
+        if (!uploadResult.success) {
+          console.error('❌ [VideoUpload] Direct upload failed:', uploadResult.error);
+          throw new Error(uploadResult.error || 'Direct upload failed');
+        }
         
         // Convert to expected contract format
         contract = {
-          contractId: uploadResult.directUploadId,
+          contractId: uploadResult.id,
           transactionId: uploadResult.transactionId,
-          brocaCost: uploadResult.totalSize, // Direct upload uses 1:1 BROCA
+          brocaCost: uploadResult.totalSize,
           totalSize: uploadResult.totalSize
         };
         

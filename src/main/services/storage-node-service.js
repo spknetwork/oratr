@@ -15,9 +15,27 @@ function initStorageNodeService(accountManager) {
     
     // Register IPC handlers
     
-    // Node management
+    // Node management - FAST startup check
     ipcMain.handle('storage:check-status', async () => {
         try {
+            // First do a fast local check
+            const fastStatus = await storageNodeManager.getFastStatus();
+            
+            // If we have a local process running, return immediately
+            if (fastStatus.quickCheck) {
+                // Do the full check in background
+                setImmediate(async () => {
+                    try {
+                        await storageNodeManager.checkNodeStatus();
+                    } catch (error) {
+                        console.error('Background registration check failed:', error);
+                    }
+                });
+                
+                return fastStatus;
+            }
+            
+            // Otherwise do full check
             return await storageNodeManager.checkNodeStatus();
         } catch (error) {
             console.error('Failed to check node status:', error);

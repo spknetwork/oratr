@@ -19,6 +19,7 @@ class IPFSManager extends EventEmitter {
       dataPath: config.dataPath || path.join(os.homedir(), '.ipfs'),
       externalNode: config.externalNode || false,
       daemon: config.daemon || false,
+      maxStorage: config.maxStorage || 100 * 1024 * 1024 * 1024, // 100GB default
       ...config
     };
     
@@ -27,6 +28,10 @@ class IPFSManager extends EventEmitter {
     this.running = false;
     this.daemonProcess = null;
     this.isExternalNode = this.config.externalNode;
+    
+    // Storage monitoring
+    this.storageMonitorInterval = null;
+    this.lastStorageCheck = null;
     
     // Lazy load ES modules
     this.kuboModule = null;
@@ -46,18 +51,37 @@ class IPFSManager extends EventEmitter {
   }
 
   /**
-   * Check if IPFS daemon is running
+   * Check if IPFS daemon is running (fast check)
    */
   async isDaemonRunning() {
     try {
+      // If we already have a running client, use it
+      if (this.client && this.running) {
+        try {
+          await this.client.id();
+          return true;
+        } catch (error) {
+          // Client failed, mark as not running
+          this.running = false;
+        }
+      }
+      
+      // Try to connect to daemon quickly
       await this.loadModules();
       const { create } = this.kuboModule;
       const testClient = create({
         host: this.config.host,
         port: this.config.port,
-        protocol: this.config.protocol
+        protocol: this.config.protocol,
+        timeout: 1000 // Fast 1 second timeout
       });
-      await testClient.id();
+      
+      // Quick ID check with timeout
+      await Promise.race([
+        testClient.id(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1000))
+      ]);
+      
       return true;
     } catch (error) {
       return false;
@@ -226,8 +250,9 @@ class IPFSManager extends EventEmitter {
       this.nodeInfo = await this.client.id();
       this.running = true;
       
-      // Start monitoring peers
+      // Start monitoring peers and storage
       this.startPeerMonitoring();
+      this.startStorageMonitoring();
       
       this.emit('started', this.nodeInfo);
       return this.nodeInfo;
@@ -242,6 +267,7 @@ class IPFSManager extends EventEmitter {
    */
   async stop() {
     this.stopPeerMonitoring();
+    this.stopStorageMonitoring();
     
     if (!this.isExternalNode && this.daemonProcess) {
       await this.stopDaemon();
@@ -276,6 +302,100 @@ class IPFSManager extends EventEmitter {
     if (this.peerMonitorInterval) {
       clearInterval(this.peerMonitorInterval);
       this.peerMonitorInterval = null;
+    }
+  }
+
+  /**
+   * Start monitoring storage usage
+   */
+  startStorageMonitoring() {
+    this.storageMonitorInterval = setInterval(async () => {
+      if (!this.running || !this.client) return;
+      
+      try {
+        const stats = await this.getRepoStats();
+        this.lastStorageCheck = {
+          timestamp: Date.now(),
+          ...stats
+        };
+        
+        // Check if approaching storage limit
+        const usagePercent = (stats.repoSize / this.config.maxStorage) * 100;
+        
+        if (usagePercent > 90) {
+          this.emit('storage-warning', {
+            level: 'critical',
+            usagePercent,
+            used: stats.repoSize,
+            limit: this.config.maxStorage
+          });
+        } else if (usagePercent > 75) {
+          this.emit('storage-warning', {
+            level: 'warning', 
+            usagePercent,
+            used: stats.repoSize,
+            limit: this.config.maxStorage
+          });
+        }
+        
+        this.emit('storage-stats', this.lastStorageCheck);
+      } catch (error) {
+        // Ignore errors in monitoring
+      }
+    }, 30000); // Check every 30 seconds
+  }
+
+  /**
+   * Stop monitoring storage
+   */
+  stopStorageMonitoring() {
+    if (this.storageMonitorInterval) {
+      clearInterval(this.storageMonitorInterval);
+      this.storageMonitorInterval = null;
+    }
+  }
+
+  /**
+   * Update storage limit
+   */
+  updateStorageLimit(limitBytes) {
+    this.config.maxStorage = limitBytes;
+    this.emit('storage-limit-updated', limitBytes);
+  }
+
+  /**
+   * Get storage usage percentage
+   */
+  async getStorageUsagePercent() {
+    try {
+      const stats = await this.getRepoStats();
+      return (stats.repoSize / this.config.maxStorage) * 100;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  /**
+   * Check if storage limit would be exceeded by adding more data
+   */
+  async checkStorageCapacity(additionalSize = 0) {
+    try {
+      const stats = await this.getRepoStats();
+      const projectedSize = stats.repoSize + additionalSize;
+      
+      return {
+        withinLimit: projectedSize <= this.config.maxStorage,
+        currentSize: stats.repoSize,
+        projectedSize,
+        limit: this.config.maxStorage,
+        availableSpace: this.config.maxStorage - stats.repoSize,
+        usagePercent: (stats.repoSize / this.config.maxStorage) * 100
+      };
+    } catch (error) {
+      return {
+        withinLimit: false,
+        error: error.message
+      };
     }
   }
 

@@ -3,6 +3,8 @@
  * Uses the new spk-js based upload service
  */
 
+const path = require('path');
+
 class SPKUploadHandler {
   constructor() {
     this.uploadInProgress = false;
@@ -117,13 +119,14 @@ class SPKUploadHandler {
           duration: options.duration || 30,
           autoRenew: options.autoRenew || false
         },
-        metadata: {
-          path: 'Videos',
-          tags: options.tags || [],
-          labels: options.labels || '',
-          license: options.license || 'CC0',
-          title: options.title || path.basename(videoPath, path.extname(videoPath))
-        }
+        // New options for video naming and folder path
+        videoName: options.videoName || options.title || path.basename(videoPath, path.extname(videoPath)),
+        folderPath: options.folderPath || 'Videos', // Default to Videos preset folder
+        description: options.description || '',
+        license: options.license || '',
+        labels: options.labels || '',
+        // For direct upload method
+        uploadMethod: options.uploadMethod || 'direct'
       };
       
       // If we have a custom thumbnail, we need to handle it

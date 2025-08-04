@@ -5,6 +5,21 @@ process.env.NODE_ENV = 'test';
 process.env.SPK_API_URL = 'https://spktest.dlux.io';
 process.env.IPFS_API_URL = 'http://localhost:5001';
 
+// Mock dynamic imports for ES modules
+jest.mock('kubo-rpc-client', () => ({
+  create: jest.fn(() => Promise.resolve({
+    add: jest.fn(),
+    get: jest.fn(),
+    pin: { add: jest.fn(), rm: jest.fn(), ls: jest.fn() },
+    id: jest.fn(() => Promise.resolve({ id: 'test-peer-id' })),
+    stop: jest.fn()
+  }))
+}));
+
+jest.mock('ipfs-only-hash', () => ({
+  of: jest.fn(() => Promise.resolve('QmTestHash123'))
+}));
+
 // Mock electron for tests
 jest.mock('electron', () => ({
   app: {
@@ -20,7 +35,8 @@ jest.mock('electron', () => ({
   ipcRenderer: {
     invoke: jest.fn(),
     on: jest.fn(),
-    send: jest.fn()
+    send: jest.fn(),
+    sendSync: jest.fn(() => ({})) // Mock for electron-store
   },
   BrowserWindow: jest.fn(() => ({
     loadFile: jest.fn(),

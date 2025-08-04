@@ -97,6 +97,64 @@ class SPKKeychainAdapter {
   // The spk-js KeychainAdapter will fall back to async methods
 
   /**
+   * Broadcast custom JSON operation (required for DirectUpload)
+   * @param {string} account - Hive username
+   * @param {string} customJsonId - Custom JSON ID (e.g., 'spk-direct-upload')
+   * @param {string} keyType - Key type ('Active' or 'Posting')
+   * @param {Object} json - JSON data to broadcast
+   * @param {string} displayMessage - Message to show user
+   */
+  async broadcastCustomJson(account, customJsonId, keyType, json, displayMessage) {
+    try {
+      console.log(`🔑 [KeychainAdapter] Broadcasting custom JSON: ${customJsonId} for ${account}`);
+      console.log(`📝 [KeychainAdapter] Message: ${displayMessage}`);
+      console.log(`🔐 [KeychainAdapter] Key type: ${keyType}`);
+      console.log(`📋 [KeychainAdapter] Data:`, JSON.stringify(json, null, 2));
+
+      // Ensure correct account
+      const currentAccount = this.accountManager.getActiveAccount();
+      if (!currentAccount || currentAccount !== account) {
+        const hasAccount = await this.accountManager.hasAccount(account);
+        if (!hasAccount) {
+          throw new Error('Account not found');
+        }
+        await this.accountManager.switchAccount(account);
+      }
+
+      // Create custom JSON operation
+      const operation = [
+        'custom_json',
+        {
+          required_auths: keyType === 'Active' ? [account] : [],
+          required_posting_auths: keyType === 'Posting' ? [account] : [],
+          id: customJsonId,
+          json: JSON.stringify(json)
+        }
+      ];
+
+      // Sign and broadcast
+      const tx = { operations: [operation] };
+      const result = await this.accountManager.signAndBroadcast(
+        account, 
+        tx, 
+        keyType.toLowerCase()
+      );
+
+      console.log(`✅ [KeychainAdapter] Custom JSON broadcast successful:`, result.id || result.transaction_id);
+      console.log(`📊 [KeychainAdapter] Full result:`, result);
+
+      return {
+        success: true,
+        id: result.id || result.transaction_id
+      };
+    } catch (error) {
+      console.error(`❌ [KeychainAdapter] Custom JSON broadcast failed:`, error.message);
+      console.error(`❌ [KeychainAdapter] Error stack:`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
    * Check if adapter is available (always true for desktop)
    */
   isAvailable() {

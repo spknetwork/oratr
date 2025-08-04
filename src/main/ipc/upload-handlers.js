@@ -120,7 +120,7 @@ function setupUploadHandlers() {
   ipcMain.handle('upload:calculate-cost', async (event, { fileSize, duration }) => {
     try {
       // Use spk-js BROCA calculator
-      const SPK = require('@spknetwork/spk-js');
+      const SPK = require('@disregardfiat/spk-js');
       const brocaCost = SPK.BROCACalculator.calculateStorageCost(fileSize, duration);
       
       return {
@@ -167,7 +167,7 @@ function setupUploadHandlers() {
 
       // Create SPK instance with our keychain adapter
       console.log('[Upload] Creating SPK instance...');
-      const SPK = require('@spknetwork/spk-js');
+      const SPK = require('@disregardfiat/spk-js');
       const SPKKeychainAdapter = require('../../core/spk/keychain-adapter');
       const keychainAdapter = new SPKKeychainAdapter(accountManager);
       
@@ -203,8 +203,8 @@ function setupUploadHandlers() {
         
         console.log('[Upload] Direct upload result:', uploadResult);
       } else {
-        // Use standard public node upload
-        console.log('[Upload] Starting nodeUpload with options:', JSON.stringify(options));
+        // Use spk-js direct upload (NOT nodeUpload which opens channels)
+        console.log('[Upload] Using spk-js directUpload method...');
         console.log('[Upload] File objects to upload:', fileObjects.map(f => ({
           name: f.name,
           size: f.size,
@@ -213,11 +213,86 @@ function setupUploadHandlers() {
           bufferLength: f.buffer?.length
         })));
         
-        uploadResult = await spk.fileUpload.nodeUpload(fileObjects, {
-          duration: options.duration || 30,
-          metadata: options.metadata
-        });
-        console.log('[Upload] Upload result:', uploadResult);
+        // Convert to spk-js format
+        const spkFiles = fileObjects.map(f => ({
+          name: f.name,
+          size: f.size,
+          arrayBuffer: async () => f.buffer
+        }));
+        
+        // Add files to OUR IPFS node and get real CIDs
+        console.log('[Upload] Adding files to local IPFS node...');
+        
+        const { ipfsManager } = getServices();
+        
+        // Ensure IPFS is running
+        if (!ipfsManager.isRunning()) {
+          console.log('[Upload] Starting IPFS node...');
+          await ipfsManager.start();
+        }
+        
+        const cids = [];
+        const sizes = [];
+        const fileDetails = [];
+        
+        // Add each file to IPFS and collect CIDs
+        for (let i = 0; i < spkFiles.length; i++) {
+          const file = spkFiles[i];
+          const buffer = Buffer.from(await file.arrayBuffer());
+          
+          console.log(`[Upload] Adding file ${i + 1}/${spkFiles.length}: ${file.name} (${buffer.length} bytes)`);
+          
+          // Actually add to IPFS (not just compute hash)
+          const cid = await ipfsManager.addFile(buffer, file.name);
+          cids.push(cid);
+          sizes.push(buffer.length);
+          
+          fileDetails.push({
+            name: file.name,
+            cid: cid,
+            size: buffer.length,
+            type: file.type || 'application/octet-stream'
+          });
+          
+          console.log(`[Upload] File added to IPFS: ${file.name} -> ${cid}`);
+        }
+        
+        console.log('[Upload] All files added to IPFS successfully');
+        console.log('[Upload] Total CIDs:', cids.length);
+        console.log('[Upload] Total size:', sizes.reduce((sum, size) => sum + size, 0), 'bytes');
+        
+        // Create metadata for direct upload
+        const metadata = spk.constructor.createDirectUploadMetadata(cids.length);
+        
+        // Create pending upload entry BEFORE broadcasting
+        const pendingUpload = {
+          id: `batch_${Date.now()}`,
+          type: 'batch',
+          status: 'uploading',
+          files: fileDetails,
+          cids: cids,
+          sizes: sizes,
+          totalSize: sizes.reduce((sum, size) => sum + size, 0),
+          metadata: metadata,
+          createdAt: new Date().toISOString(),
+          options: options
+        };
+        
+        console.log('[Upload] Saving to pending uploads for restart capability...');
+        const { pendingUploadsManager } = getServices();
+        await pendingUploadsManager.addPendingUpload(pendingUpload);
+        
+        // Prepare direct upload options
+        const directUploadOptions = {
+          cids,
+          sizes,
+          id: pendingUpload.id,
+          metadata
+        };
+        
+        console.log('[Upload] Broadcasting direct upload transaction...');
+        uploadResult = await spk.directUploadFiles(directUploadOptions);
+        console.log('[Upload] Direct upload result:', uploadResult);
       }
 
       // Find master playlist CID
@@ -251,7 +326,7 @@ function setupUploadHandlers() {
       }
 
       // Create SPK instance
-      const SPK = require('@spknetwork/spk-js');
+      const SPK = require('@disregardfiat/spk-js');
       const SPKKeychainAdapter = require('../../core/spk/keychain-adapter');
       const keychainAdapter = new SPKKeychainAdapter(accountManager);
       
@@ -289,6 +364,52 @@ function setupUploadHandlers() {
     }
   });
 
+  // Simple direct upload handler for drag & drop
+  ipcMain.handle('upload:direct-simple', async (event, { files, options }) => {
+    try {
+      const { accountManager, directUploadService } = getServices();
+      const currentAccount = accountManager.getCurrentAccount();
+      
+      if (!currentAccount) {
+        throw new Error('No active account. Please login first.');
+      }
+
+      // Create SPK instance
+      const SPK = require('@disregardfiat/spk-js');
+      const SPKKeychainAdapter = require('../../core/spk/keychain-adapter');
+      const keychainAdapter = new SPKKeychainAdapter(accountManager);
+      
+      const spk = new SPK(currentAccount, {
+        keychain: keychainAdapter
+      });
+      
+      await spk.init();
+      directUploadService.spkClient = spk;
+
+      // Listen for progress events
+      const progressHandler = (data) => {
+        event.sender.send('upload:progress', data);
+      };
+      directUploadService.on('progress', progressHandler);
+
+      try {
+        const uploadResult = await directUploadService.directUpload(files, options);
+        
+        directUploadService.removeListener('progress', progressHandler);
+        
+        return {
+          success: true,
+          data: uploadResult
+        };
+      } catch (error) {
+        directUploadService.removeListener('progress', progressHandler);
+        throw error;
+      }
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // Check direct upload availability
   ipcMain.handle('upload:check-direct-availability', async () => {
     try {
@@ -297,7 +418,7 @@ function setupUploadHandlers() {
       // Create SPK instance if we have an account
       const currentAccount = accountManager.getCurrentAccount();
       if (currentAccount) {
-        const SPK = require('@spknetwork/spk-js');
+        const SPK = require('@disregardfiat/spk-js');
         const SPKKeychainAdapter = require('../../core/spk/keychain-adapter');
         const keychainAdapter = new SPKKeychainAdapter(accountManager);
         
@@ -322,6 +443,57 @@ function setupUploadHandlers() {
       const { directUploadService } = getServices();
       const cost = directUploadService.calculateCost(files);
       return { success: true, data: { cost } };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Pending uploads management
+  ipcMain.handle('pending-uploads:get-all', async () => {
+    try {
+      const { pendingUploadsManager } = getServices();
+      const uploads = await pendingUploadsManager.getUploadsForDisplay();
+      return { success: true, data: uploads };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pending-uploads:check-video', async (event, { videoPath }) => {
+    try {
+      const { pendingUploadsManager } = getServices();
+      const upload = await pendingUploadsManager.hasPendingVideoUpload(videoPath);
+      return { success: true, data: upload };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pending-uploads:retry', async (event, { uploadId }) => {
+    try {
+      const { pendingUploadsManager } = getServices();
+      const upload = await pendingUploadsManager.retryUpload(uploadId);
+      return { success: true, data: upload };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pending-uploads:remove', async (event, { uploadId }) => {
+    try {
+      const { pendingUploadsManager } = getServices();
+      const upload = await pendingUploadsManager.removeUpload(uploadId);
+      return { success: true, data: upload };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pending-uploads:get-stats', async () => {
+    try {
+      const { pendingUploadsManager } = getServices();
+      const stats = await pendingUploadsManager.getStats();
+      return { success: true, data: stats };
     } catch (error) {
       return { success: false, error: error.message };
     }

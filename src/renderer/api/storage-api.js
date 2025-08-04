@@ -1,6 +1,7 @@
 /**
  * Storage Node API - Renderer process interface
  */
+
 class StorageAPI {
     constructor() {
         this.eventHandlers = new Map();
@@ -9,40 +10,40 @@ class StorageAPI {
     
     // Node management
     async checkNodeStatus() {
-        return window.api.invoke('storage:check-status');
+        return window.ipcRenderer.invoke('storage:check-status');
     }
     
     async registerNode(ipfsId, domain, bidRate = 500) {
-        return window.api.invoke('storage:register-node', { ipfsId, domain, bidRate });
+        return window.ipcRenderer.invoke('storage:register-node', { ipfsId, domain, bidRate });
     }
     
     async registerAuthority(pubKey) {
-        return window.api.invoke('storage:register-authority', pubKey);
+        return window.ipcRenderer.invoke('storage:register-authority', pubKey);
     }
     
     // Contract management
     async getAvailableContracts(limit = 100) {
-        return window.api.invoke('storage:get-available-contracts', limit);
+        return window.ipcRenderer.invoke('storage:get-available-contracts', limit);
     }
     
     async getStoredContracts() {
-        return window.api.invoke('storage:get-stored-contracts');
+        return window.ipcRenderer.invoke('storage:get-stored-contracts');
     }
     
     async storeFiles(contractIds) {
-        return window.api.invoke('storage:store-files', contractIds);
+        return window.ipcRenderer.invoke('storage:store-files', contractIds);
     }
     
     async removeFiles(contractIds) {
-        return window.api.invoke('storage:remove-files', contractIds);
+        return window.ipcRenderer.invoke('storage:remove-files', contractIds);
     }
     
     async batchStore(contractIds, chunkSize = 10) {
-        return window.api.invoke('storage:batch-store', { contractIds, chunkSize });
+        return window.ipcRenderer.invoke('storage:batch-store', { contractIds, chunkSize });
     }
     
     async extendContract(contractId, fileOwner, brocaAmount, power = 0) {
-        return window.api.invoke('storage:extend-contract', { 
+        return window.ipcRenderer.invoke('storage:extend-contract', { 
             contractId, 
             fileOwner, 
             brocaAmount, 
@@ -52,32 +53,32 @@ class StorageAPI {
     
     // Search and discovery
     async searchFiles(options = {}) {
-        return window.api.invoke('storage:search-files', options);
+        return window.ipcRenderer.invoke('storage:search-files', options);
     }
     
     async getFilesByTags(tags, logic = 'OR') {
-        return window.api.invoke('storage:get-files-by-tags', { tags, logic });
+        return window.ipcRenderer.invoke('storage:get-files-by-tags', { tags, logic });
     }
     
     async getRecentFiles(limit = 50) {
-        return window.api.invoke('storage:get-recent-files', limit);
+        return window.ipcRenderer.invoke('storage:get-recent-files', limit);
     }
     
     async findStorageOpportunities(filters = {}) {
-        return window.api.invoke('storage:find-opportunities', filters);
+        return window.ipcRenderer.invoke('storage:find-opportunities', filters);
     }
     
     // Statistics and monitoring
     async getNodeStats() {
-        return window.api.invoke('storage:get-node-stats');
+        return window.ipcRenderer.invoke('storage:get-node-stats');
     }
     
     async getExpiringContracts(days = 7) {
-        return window.api.invoke('storage:get-expiring-contracts', days);
+        return window.ipcRenderer.invoke('storage:get-expiring-contracts', days);
     }
     
     async calculateROI(storageCapacity, bidRate = 500) {
-        return window.api.invoke('storage:calculate-roi', { storageCapacity, bidRate });
+        return window.ipcRenderer.invoke('storage:calculate-roi', { storageCapacity, bidRate });
     }
     
     // Event handling
@@ -90,7 +91,7 @@ class StorageAPI {
         ];
         
         events.forEach(event => {
-            window.api.on(event, (data) => {
+            window.window.ipcRenderer.on(event, (event, data) => {
                 this.emit(event.replace('storage:', ''), data);
             });
         });

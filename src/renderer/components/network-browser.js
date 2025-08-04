@@ -21,7 +21,12 @@ class NetworkBrowser {
     async init() {
         this.render();
         this.attachEventListeners();
-        await this.loadOpportunities();
+        // Only load data if storageManager is available
+        if (this.storageManager) {
+            await this.loadOpportunities();
+        } else {
+            this.showMessage('Waiting for storage service to initialize...');
+        }
     }
     
     render() {
@@ -217,6 +222,11 @@ class NetworkBrowser {
     }
     
     async loadOpportunities() {
+        if (!this.storageManager) {
+            this.showMessage('Storage service not available');
+            return;
+        }
+        
         this.showLoading();
         
         try {
@@ -230,6 +240,11 @@ class NetworkBrowser {
     }
     
     async loadRecentFiles() {
+        if (!this.storageManager) {
+            this.showMessage('Storage service not available');
+            return;
+        }
+        
         this.showLoading();
         
         try {
@@ -246,6 +261,11 @@ class NetworkBrowser {
         const type = document.getElementById('search-type').value;
         
         if (!query) return;
+        
+        if (!this.storageManager) {
+            this.showMessage('Storage service not available');
+            return;
+        }
         
         this.showLoading();
         
@@ -503,6 +523,11 @@ class NetworkBrowser {
     showError(message) {
         const fileList = document.getElementById('file-list');
         fileList.innerHTML = `<div class="error">${message}</div>`;
+    }
+    
+    showMessage(message) {
+        const fileList = document.getElementById('file-list');
+        fileList.innerHTML = `<div class="message">${message}</div>`;
     }
     
     formatBytes(bytes) {

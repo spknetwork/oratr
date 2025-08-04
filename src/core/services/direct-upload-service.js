@@ -1,6 +1,6 @@
 /**
- * Direct Upload Service
- * Handles direct uploads to the SPK Network using local IPFS node
+ * Streamlined Direct Upload Service
+ * Simplified one-click upload using spk-js directUpload method
  */
 
 const { EventEmitter } = require('events');
@@ -9,16 +9,17 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 class DirectUploadService extends EventEmitter {
-  constructor({ ipfsManager, spkClient }) {
+  constructor({ ipfsManager, spkClient, pendingUploadsManager }) {
     super();
     this.ipfsManager = ipfsManager;
     this.spkClient = spkClient;
+    this.pendingUploadsManager = pendingUploadsManager;
     this.activeUploads = new Map();
   }
 
   /**
-   * Direct upload files using local IPFS node
-   * @param {Array} files - Array of file objects with content, name, type
+   * ONE-CLICK Direct Upload - streamlined process
+   * @param {Array} files - Array of file objects (File, Buffer, or { name, content/buffer/arrayBuffer })
    * @param {Object} options - Upload options
    * @returns {Promise} Upload result
    */
@@ -27,115 +28,222 @@ class DirectUploadService extends EventEmitter {
     const uploadInfo = {
       id: uploadId,
       files: files.length,
-      status: 'preparing',
+      status: 'uploading',
       progress: 0
     };
     
     this.activeUploads.set(uploadId, uploadInfo);
     
     try {
-      // Stage 1: Pin files to local IPFS
       this.emit('progress', {
         uploadId,
-        stage: 'pinning',
+        stage: 'preparing',
         progress: 0,
-        message: 'Pinning files to local IPFS node...'
+        message: 'Preparing files for direct upload...'
       });
       
-      // Ensure IPFS is running
-      if (!this.ipfsManager.isRunning()) {
+      // Ensure IPFS is running if we have one
+      if (this.ipfsManager && !(await this.ipfsManager.isDaemonRunning())) {
         await this.ipfsManager.start();
       }
       
-      const pinnedFiles = [];
-      const cids = [];
-      const sizes = [];
+      // Convert files to the format expected by spk-js
+      const processedFiles = [];
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        let processedFile;
         
-        // Convert buffer if needed
-        let content;
-        if (file.buffer) {
-          content = Buffer.from(file.buffer);
-        } else if (file.content) {
-          content = file.content;
+        if (file instanceof File) {
+          // Browser File object - use directly
+          processedFile = file;
+        } else if (file.buffer || file.content) {
+          // Node.js buffer/content
+          const content = file.buffer || file.content;
+          processedFile = {
+            name: file.name || `file_${i}`,
+            size: content.length,
+            arrayBuffer: async () => content instanceof Buffer ? content : Buffer.from(content)
+          };
         } else if (file.arrayBuffer) {
-          content = Buffer.from(await file.arrayBuffer());
+          // File-like object with arrayBuffer method
+          processedFile = file;
         } else {
-          throw new Error(`Invalid file format for ${file.name}`);
+          throw new Error(`Invalid file format for file ${i}: ${file.name || 'unnamed'}`);
         }
         
-        // Add to IPFS
-        const result = await this.ipfsManager.addFile(content, file.name);
+        processedFiles.push(processedFile);
         
-        pinnedFiles.push({
-          name: file.name,
-          cid: result.cid.toString(),
-          size: content.length
-        });
-        
-        cids.push(result.cid.toString());
-        sizes.push(content.length);
-        
-        const progress = ((i + 1) / files.length) * 50; // First 50% for pinning
         this.emit('progress', {
           uploadId,
-          stage: 'pinning',
-          progress,
-          message: `Pinned ${i + 1}/${files.length} files`
+          stage: 'preparing',
+          progress: ((i + 1) / files.length) * 30,
+          message: `Prepared ${i + 1}/${files.length} files`
         });
       }
       
-      // Stage 2: Create metadata
+      // Create metadata for the upload - keep it minimal
       const metadata = options.metadata || {};
-      metadata.files = pinnedFiles.map(f => ({
-        name: f.name,
-        cid: f.cid
-      }));
       
-      // Determine file tags based on extensions
-      const tags = [];
-      if (pinnedFiles.some(f => /\.(mp4|avi|mov|mkv|m3u8)$/i.test(f.name))) {
-        tags.push(4); // Video tag
-      }
-      if (pinnedFiles.some(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f.name))) {
-        tags.push(3); // Image tag
-      }
-      if (pinnedFiles.some(f => /\.(mp3|wav|flac|ogg)$/i.test(f.name))) {
-        tags.push(5); // Audio tag
-      }
-      if (pinnedFiles.some(f => /\.(pdf|doc|docx|txt)$/i.test(f.name))) {
-        tags.push(2); // Document tag
-      }
-      
-      // Create metadata string for direct upload
-      const metadataString = this.spkClient.constructor.createDirectUploadMetadata(
-        cids.length,
-        tags
-      );
-      
-      // Stage 3: Broadcast direct upload transaction
       this.emit('progress', {
         uploadId,
         stage: 'broadcasting',
-        progress: 60,
-        message: 'Broadcasting to SPK Network...'
+        progress: 40,
+        message: 'Broadcasting transaction and uploading files...'
       });
       
-      // Create unique upload ID
-      const directUploadId = `upload_${Date.now()}_${uploadId.substring(0, 8)}`;
+      // Add files to OUR IPFS node and get real CIDs
+      console.log(`[DirectUpload] Adding ${processedFiles.length} files to local IPFS node...`);
       
-      // Use spk-js direct upload
-      const result = await this.spkClient.directUploadFiles({
+      const cids = [];
+      const sizes = [];
+      const fileDetails = [];
+      
+      for (let i = 0; i < processedFiles.length; i++) {
+        const file = processedFiles[i];
+        
+        // Get file content as buffer
+        let content;
+        if (file.arrayBuffer) {
+          content = Buffer.from(await file.arrayBuffer());
+        } else if (file.content) {
+          content = file.content;
+        } else if (file.buffer) {
+          content = file.buffer;
+        } else {
+          throw new Error(`Cannot get content for file: ${file.name}`);
+        }
+        
+        console.log(`[DirectUpload] Adding file ${i + 1}/${processedFiles.length}: ${file.name} (${content.length} bytes)`);
+        
+        // Actually add to IPFS (not just compute hash) - this stores the file
+        const result = await this.ipfsManager.addFile(content, file.name);
+        const cid = result.cid ? result.cid.toString() : result.toString();
+        cids.push(cid);
+        sizes.push(content.length);
+        
+        // Store file details for pending uploads
+        fileDetails.push({
+          name: file.name,
+          cid: cid,
+          size: content.length,
+          type: file.type || 'application/octet-stream'
+        });
+        
+        console.log(`[DirectUpload] File added to IPFS: ${file.name} -> ${cid}`);
+        
+        this.emit('progress', {
+          uploadId,
+          stage: 'storing',
+          progress: 40 + ((i + 1) / processedFiles.length) * 30,
+          message: `Stored file ${i + 1}/${processedFiles.length} in IPFS`
+        });
+      }
+      
+      console.log('[DirectUpload] All files stored in local IPFS successfully');
+      
+      // Create metadata array - one metadata object per file
+      const uploadMetadata = [];
+      
+      // Get video name from options or use default
+      const videoName = options.videoName || options.originalVideoName || options.title || 'video';
+      
+      // Get folder path - default to Videos folder (preset 4)
+      // Users can specify custom path like "Videos/Movies" or "MyVideos" 
+      const folderPath = options.folderPath || 'Videos';
+      
+      for (let i = 0; i < processedFiles.length; i++) {
+        const file = processedFiles[i];
+        const parts = file.name.split('.');
+        const ext = parts[parts.length - 1];
+        
+        if (file.name.includes('master.m3u8')) {
+          // Main m3u8 file gets visible metadata with user-specified video name
+          const videoParts = videoName.split('.');
+          const videoBaseName = videoParts.length > 1 ? videoParts.slice(0, -1).join('.') : videoParts[0];
+          
+          // Construct full path with folder
+          const fullPath = folderPath ? `${folderPath}/${videoBaseName}.${ext}` : `${videoBaseName}.${ext}`;
+          
+          uploadMetadata.push({
+            name: videoBaseName,
+            ext: ext,
+            path: fullPath,
+            description: options.description || '',
+            thumbnail: options.thumbnailCid || '',
+            flag: 1, // visible
+            license: options.license || '',
+            labels: options.labels || ''
+          });
+        } else {
+          // Other files are hidden (segments, etc.)
+          uploadMetadata.push({
+            name: '',
+            ext: '',
+            path: '',
+            description: '',
+            thumbnail: '',
+            flag: 2, // hidden
+            license: '',
+            labels: ''
+          });
+        }
+      }
+      
+      console.log('[DirectUpload] Created metadata:', uploadMetadata);
+      
+      // Create pending upload entry BEFORE broadcasting (for restart capability)
+      const pendingUpload = {
+        id: uploadId,
+        type: options.type || 'files',
+        status: 'uploading',
+        files: fileDetails,
+        cids: cids,
+        sizes: sizes,
+        totalSize: sizes.reduce((sum, size) => sum + size, 0),
+        metadata: uploadMetadata,
+        createdAt: new Date().toISOString(),
+        options: options,
+        originalVideoPath: options.originalVideoPath, // For video uploads
+        transcodingSettings: options.transcodingSettings
+      };
+      
+      console.log('[DirectUpload] Saving to pending uploads for restart capability...');
+      if (this.pendingUploadsManager) {
+        await this.pendingUploadsManager.addPendingUpload(pendingUpload);
+      }
+      
+      this.emit('progress', {
+        uploadId,
+        stage: 'broadcasting',
+        progress: 80,
+        message: 'Broadcasting transaction to SPK Network...'
+      });
+      
+      // Use spk-js directUploadFiles method with CIDs and sizes
+      const directUploadOptions = {
         cids,
         sizes,
-        id: directUploadId,
-        metadata: metadataString
-      });
+        id: uploadId,
+        metadata: uploadMetadata
+      };
       
-      if (!result.success) {
-        throw new Error(result.error || 'Direct upload failed');
+      console.log('[DirectUpload] Broadcasting direct upload transaction...');
+      console.log('[DirectUpload] Upload options:', JSON.stringify(directUploadOptions, null, 2));
+      
+      let result;
+      try {
+        result = await this.spkClient.directUploadFiles(directUploadOptions);
+      } catch (error) {
+        console.error('[DirectUpload] spkClient.directUploadFiles failed:', error);
+        throw new Error(`Direct upload broadcast failed: ${error.message}`);
+      }
+      
+      // Check if upload was successful
+      if (!result || !result.success) {
+        const errorMsg = result?.error || 'Direct upload failed with no error message';
+        console.error('[DirectUpload] Upload result indicates failure:', result);
+        throw new Error(errorMsg);
       }
       
       this.emit('progress', {
@@ -145,21 +253,32 @@ class DirectUploadService extends EventEmitter {
         message: 'Upload complete!'
       });
       
-      // Build response
+      // Build simplified response from DirectUploadResult
       const uploadResult = {
-        success: true,
+        success: result.success,
         uploadId,
-        directUploadId,
+        directUploadId: result.id,
         transactionId: result.transactionId,
-        files: pinnedFiles,
-        totalSize: sizes.reduce((sum, size) => sum + size, 0),
-        metadata,
-        ipfsGatewayUrls: pinnedFiles.map(f => ({
+        files: fileDetails.map(f => ({
           name: f.name,
+          size: f.size,
           cid: f.cid,
-          url: `https://ipfs.io/ipfs/${f.cid}`
-        }))
+          url: `https://ipfs.dlux.io/ipfs/${f.cid}`,
+          type: f.type
+        })),
+        filesUploaded: result.filesUploaded,
+        totalSize: result.totalSize,
+        brocaCost: result.totalSize, // Direct upload uses 1:1 BROCA per byte
+        metadata: uploadMetadata
       };
+      
+      // Update pending upload status to 'completed' after successful broadcast
+      if (this.pendingUploadsManager) {
+        await this.pendingUploadsManager.updateUploadStatus(uploadId, 'completed', {
+          transactionId: result.transactionId,
+          completedAt: new Date().toISOString()
+        });
+      }
       
       this.activeUploads.delete(uploadId);
       this.emit('completed', uploadResult);
@@ -177,11 +296,11 @@ class DirectUploadService extends EventEmitter {
   }
 
   /**
-   * Direct upload files from file paths
+   * Drag & Drop Upload - simplified interface for file paths
    * @param {Array<string>} filePaths - Array of file paths
    * @param {Object} options - Upload options
    */
-  async directUploadFromPaths(filePaths, options = {}) {
+  async uploadFromPaths(filePaths, options = {}) {
     const files = [];
     
     for (const filePath of filePaths) {
@@ -192,8 +311,7 @@ class DirectUploadService extends EventEmitter {
       files.push({
         name,
         content,
-        size: stats.size,
-        type: this.getMimeType(name)
+        size: stats.size
       });
     }
     
@@ -201,23 +319,48 @@ class DirectUploadService extends EventEmitter {
   }
 
   /**
-   * Direct upload for video files with metadata
-   * @param {Object} videoData - Video data including segments and playlists
-   * @param {Object} options - Upload options
+   * Video Upload - streamlined for transcoded video files
+   * @param {Array} videoFiles - Array of video files (segments, playlists, thumbnails)
+   * @param {Object} options - Upload options with video metadata
+   * @param {string} options.videoName - Name for the video (without extension)
+   * @param {string} options.folderPath - Folder path (default: 'Videos'). Can be:
+   *   - 'Videos' (default preset folder)
+   *   - 'Videos/Movies' (subfolder under Videos)
+   *   - 'MyCustomFolder' (custom top-level folder)
+   *   - 'Documents/Work/Presentations' (nested custom folders)
+   * @param {string} options.description - Video description
+   * @param {string} options.thumbnailCid - CID of thumbnail image
+   * @param {string} options.license - License information (e.g., 'CC-BY', 'All Rights Reserved')
+   * @param {string} options.labels - Comma-separated tags/labels (e.g., 'tutorial,programming')
    */
-  async directUploadVideo(videoData, options = {}) {
-    const { files, masterPlaylistCID, thumbnail, resolutions } = videoData;
+  async uploadVideo(videoFiles, options = {}) {
+    // Check if this video already has a pending upload
+    if (options.originalVideoPath && this.pendingUploadsManager) {
+      const existingUpload = await this.pendingUploadsManager.hasPendingVideoUpload(options.originalVideoPath);
+      if (existingUpload) {
+        // Return the existing upload instead of uploading again
+        return {
+          success: true,
+          uploadId: existingUpload.id,
+          contractId: existingUpload.contractId,
+          transactionId: existingUpload.transactionId,
+          files: existingUpload.files,
+          totalSize: existingUpload.totalSize,
+          brocaCost: existingUpload.brocaCost,
+          metadata: existingUpload.metadata,
+          fromCache: true,
+          status: existingUpload.status
+        };
+      }
+    }
     
-    // Add video-specific metadata
-    const metadata = {
-      ...options.metadata,
-      type: 'video/hls',
-      masterPlaylist: masterPlaylistCID,
-      thumbnail: thumbnail?.cid,
-      resolutions: Object.keys(resolutions)
+    // Add video type marker for pending uploads
+    const videoOptions = {
+      ...options,
+      type: 'video'
     };
     
-    return this.directUpload(files, { ...options, metadata });
+    return this.directUpload(videoFiles, videoOptions);
   }
 
   /**
@@ -225,23 +368,17 @@ class DirectUploadService extends EventEmitter {
    */
   async isAvailable() {
     try {
-      // Check if IPFS is available
-      const ipfsAvailable = this.ipfsManager.isRunning() || await this.ipfsManager.checkHealth();
-      
-      // Check if we have an active SPK account
-      const account = await this.spkClient.account.init();
-      const hasAccount = !!account.username;
-      
-      // Check BROCA balance
-      const balances = await this.spkClient.getBalances();
-      const hasBroca = balances.broca > 0;
+      // Simple check - just verify SPK client is ready
+      if (!this.spkClient?.file?.directUpload) {
+        return {
+          available: false,
+          error: 'SPK client not initialized'
+        };
+      }
       
       return {
-        available: ipfsAvailable && hasAccount && hasBroca,
-        ipfsAvailable,
-        hasAccount,
-        hasBroca,
-        brocaBalance: balances.broca
+        available: true,
+        message: 'Ready for direct upload'
       };
     } catch (error) {
       return {
@@ -257,39 +394,8 @@ class DirectUploadService extends EventEmitter {
    */
   calculateCost(files) {
     const totalSize = files.reduce((sum, file) => sum + (file.size || 0), 0);
-    return this.spkClient.calculateDirectUploadCost([totalSize]);
-  }
-
-  /**
-   * Get MIME type from filename
-   */
-  getMimeType(filename) {
-    const ext = path.extname(filename).toLowerCase();
-    const mimeTypes = {
-      '.mp4': 'video/mp4',
-      '.webm': 'video/webm',
-      '.avi': 'video/x-msvideo',
-      '.mov': 'video/quicktime',
-      '.mkv': 'video/x-matroska',
-      '.m3u8': 'application/x-mpegURL',
-      '.ts': 'video/MP2T',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.pdf': 'application/pdf',
-      '.doc': 'application/msword',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.txt': 'text/plain',
-      '.json': 'application/json',
-      '.mp3': 'audio/mpeg',
-      '.wav': 'audio/wav',
-      '.flac': 'audio/flac',
-      '.ogg': 'audio/ogg'
-    };
-    
-    return mimeTypes[ext] || 'application/octet-stream';
+    // BROCA cost is typically 1:1 with file size for direct uploads
+    return totalSize;
   }
 
   /**
@@ -310,6 +416,7 @@ class DirectUploadService extends EventEmitter {
   getActiveUploads() {
     return Array.from(this.activeUploads.values());
   }
+
 }
 
 module.exports = DirectUploadService;

@@ -25,6 +25,10 @@ class POAStorageNode extends EventEmitter {
       maxStorage: config.maxStorage || 100 * 1024 * 1024 * 1024, // 100GB default
       spkApiUrl: config.spkApiUrl || 'https://spktest.dlux.io', // SPK API endpoint
       daemon: config.daemon !== false, // Run as daemon by default
+      // Log rotation settings
+      maxLogSize: config.maxLogSize || 50 * 1024 * 1024, // 50MB per log file
+      maxLogFiles: config.maxLogFiles || 10, // Keep 10 log files max
+      logRotationInterval: config.logRotationInterval || 24 * 60 * 60 * 1000, // Rotate daily
       ...config
     };
     
@@ -33,6 +37,8 @@ class POAStorageNode extends EventEmitter {
     // Storage nodes don't have WebSocket servers
     this.logStream = null;
     this.logs = [];
+    this.currentLogFile = null;
+    this.logRotationTimer = null;
     this.stats = {
       filesStored: 0,
       spaceUsed: 0,
@@ -55,7 +61,42 @@ class POAStorageNode extends EventEmitter {
     }
   }
 
-  // Removed findAvailablePort - storage nodes don't listen on WebSocket ports
+  /**
+   * Find an available port starting from the given port number
+   */
+  async findAvailablePort(startPort = 8000) {
+    const net = require('net');
+    
+    for (let port = startPort; port < startPort + 100; port++) {
+      if (await this.isPortAvailable(port)) {
+        return port;
+      }
+    }
+    
+    // If no port found in range, use a random high port
+    return Math.floor(Math.random() * (65535 - 49152) + 49152);
+  }
+  
+  /**
+   * Check if a port is available
+   */
+  async isPortAvailable(port) {
+    const net = require('net');
+    
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      
+      server.listen(port, () => {
+        server.close(() => {
+          resolve(true);
+        });
+      });
+      
+      server.on('error', () => {
+        resolve(false);
+      });
+    });
+  }
 
   /**
    * Check IPFS requirements for POA
@@ -485,9 +526,16 @@ class POAStorageNode extends EventEmitter {
     // Ensure data directory exists
     await fs.mkdir(this.config.dataPath, { recursive: true });
     
-    // Create log file
-    const logFile = path.join(this.config.dataPath, `poa-${Date.now()}.log`);
-    this.logStream = await fs.open(logFile, 'a');
+    // Clean up old logs on startup
+    await this.pruneOldLogs();
+    
+    // Create new log file with rotation system
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    this.currentLogFile = path.join(this.config.dataPath, `poa-${timestamp}.log`);
+    this.logStream = await fs.open(this.currentLogFile, 'a');
+    
+    // Start log rotation timer
+    this.startLogRotationTimer();
 
     // First check IPFS configuration
     const ipfsCheck = await this.checkIPFSRequirements();
@@ -497,7 +545,7 @@ class POAStorageNode extends EventEmitter {
 
     // Storage nodes don't need a WebSocket port - they connect to validators
 
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       const args = [
         '-node', this.config.nodeType.toString(),
         '-username', this.config.account,
@@ -505,6 +553,24 @@ class POAStorageNode extends EventEmitter {
         '-useWS',  // Use WebSocket to connect to validators
         '-url=' + this.config.spkApiUrl  // Honeycomb API URL (required)
       ];
+      
+      // Storage nodes shouldn't listen on ports, but POA requires WS_PORT parameter
+      if (this.config.nodeType === 2) {
+        try {
+          const availablePort = await this.findAvailablePort(8000);
+          args.push('-WS_PORT=' + availablePort);
+          this.emit('log', { 
+            level: 'info', 
+            message: `Storage node will use WebSocket port ${availablePort} (for POA binary requirement)`
+          });
+        } catch (error) {
+          this.emit('log', { 
+            level: 'warn', 
+            message: `Could not find available port, using default: ${error.message}`
+          });
+          args.push('-WS_PORT=8001'); // Use a different default to avoid conflicts
+        }
+      }
       
       // Add validators URL if different from default
       if (this.config.validatorsUrl) {
@@ -519,6 +585,11 @@ class POAStorageNode extends EventEmitter {
       }
       
       console.log('Starting POA with args:', args);
+      console.log('POA account configured:', this.config.account);
+      this.emit('log', { 
+        level: 'info', 
+        message: `Starting POA storage node for account: ${this.config.account}`
+      });
       this.emit('log', { 
         level: 'info', 
         message: `Starting POA with command: ${this.config.binaryPath} ${args.join(' ')}`
@@ -533,24 +604,18 @@ class POAStorageNode extends EventEmitter {
         }
       };
       
-      if (this.config.daemon !== false) {
-        // Spawn as detached process (daemon)
-        spawnOptions.detached = true;
-        spawnOptions.stdio = ['ignore', 'pipe', 'pipe']; // Keep stdout/stderr for logging
-      }
+      // Always keep stdio attached for real-time logging and status updates
+      spawnOptions.stdio = ['ignore', 'pipe', 'pipe'];
 
       this.process = spawn(this.config.binaryPath, args, spawnOptions);
       
-      // If running as daemon, store the PID
-      if (this.config.daemon !== false) {
-        this.pid = this.process.pid;
-        this.savePidFile().catch(err => {
-          console.error('Failed to save PID file:', err);
-        });
-        
-        // Allow parent to exit
-        this.process.unref();
-      }
+      // Store the PID for monitoring
+      this.pid = this.process.pid;
+      this.savePidFile().catch(err => {
+        console.error('Failed to save PID file:', err);
+      });
+      
+      // Don't unref() - keep the parent connected for real-time communication
 
       let startupTimeout = setTimeout(() => {
         // Don't reject if the process is still running - POA might just be slow to output
@@ -586,6 +651,9 @@ class POAStorageNode extends EventEmitter {
         if (this.logs.length > 1000) this.logs.shift(); // Keep last 1000 lines
         
         this.emit('log', { level: 'info', message: output.trim() });
+        
+        // Check for log rotation before writing
+        await this.rotateLogIfNeeded();
         
         if (this.logStream) {
           await this.logStream.write(logEntry + '\n');
@@ -632,6 +700,9 @@ class POAStorageNode extends EventEmitter {
         
         this.emit('log', { level: 'error', message: error.trim() });
         
+        // Check for log rotation before writing
+        await this.rotateLogIfNeeded();
+        
         if (this.logStream) {
           await this.logStream.write(logEntry + '\n');
         }
@@ -653,6 +724,7 @@ class POAStorageNode extends EventEmitter {
         clearTimeout(startupTimeout);
         this.process = null;
         this.running = false;
+        this.stopLogRotationTimer();
         this.emit('stopped', code);
         this.emit('log', { 
           level: 'info', 
@@ -715,6 +787,8 @@ class POAStorageNode extends EventEmitter {
    * Stop POA node
    */
   async stop() {
+    // Stop log rotation timer
+    this.stopLogRotationTimer();
 
     // If we have a running process handle
     if (this.process) {
@@ -723,6 +797,10 @@ class POAStorageNode extends EventEmitter {
           this.process = null;
           this.running = false;
           this.removePidFile();
+          if (this.logStream) {
+            this.logStream.close();
+            this.logStream = null;
+          }
           resolve();
         });
 
@@ -762,6 +840,12 @@ class POAStorageNode extends EventEmitter {
     await this.removePidFile();
     this.running = false;
     this.process = null;
+    
+    // Close log stream
+    if (this.logStream) {
+      this.logStream.close();
+      this.logStream = null;
+    }
   }
 
   // Storage nodes don't host WebSocket servers - they connect to validators
@@ -861,6 +945,212 @@ class POAStorageNode extends EventEmitter {
   }
 
   /**
+   * Rotate current log file if it's too large
+   */
+  async rotateLogIfNeeded() {
+    if (!this.currentLogFile) return;
+
+    try {
+      const stats = await fs.stat(this.currentLogFile);
+      if (stats.size >= this.config.maxLogSize) {
+        await this.rotateCurrentLog();
+      }
+    } catch (error) {
+      // Log file doesn't exist or other error, ignore
+    }
+  }
+
+  /**
+   * Force rotate the current log file
+   */
+  async rotateCurrentLog() {
+    if (this.logStream) {
+      await this.logStream.close();
+      this.logStream = null;
+    }
+
+    // Create new log file with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    this.currentLogFile = path.join(this.config.dataPath, `poa-${timestamp}.log`);
+    this.logStream = await fs.open(this.currentLogFile, 'a');
+
+    this.emit('log', {
+      level: 'info',
+      message: `Log rotated to: ${path.basename(this.currentLogFile)}`
+    });
+
+    // Clean up old log files
+    await this.pruneOldLogs();
+  }
+
+  /**
+   * Remove old log files keeping only the most recent ones
+   */
+  async pruneOldLogs() {
+    try {
+      const logFiles = await this.getLogFiles();
+      const filesToDelete = logFiles.slice(0, -this.config.maxLogFiles);
+
+      for (const file of filesToDelete) {
+        try {
+          await fs.unlink(file);
+          this.emit('log', {
+            level: 'info',
+            message: `Deleted old log file: ${path.basename(file)}`
+          });
+        } catch (error) {
+          console.error(`Failed to delete log file ${file}:`, error);
+        }
+      }
+
+      // Also check for oversized log files and compress/delete them
+      await this.handleOversizedLogs();
+    } catch (error) {
+      console.error('Failed to prune old logs:', error);
+    }
+  }
+
+  /**
+   * Handle oversized log files during network stress
+   */
+  async handleOversizedLogs() {
+    try {
+      const logFiles = await this.getLogFiles();
+      
+      for (const file of logFiles) {
+        if (file === this.currentLogFile) continue; // Don't touch current log
+        
+        try {
+          const stats = await fs.stat(file);
+          
+          // If file is very large (> 100MB), compress or delete it
+          if (stats.size > 100 * 1024 * 1024) {
+            // Try to compress first, then delete if compression fails
+            const compressed = await this.compressLogFile(file);
+            if (!compressed) {
+              await fs.unlink(file);
+              this.emit('log', {
+                level: 'warn',
+                message: `Deleted oversized log file: ${path.basename(file)} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`
+              });
+            }
+          }
+        } catch (error) {
+          // File might be deleted already, ignore
+        }
+      }
+    } catch (error) {
+      console.error('Failed to handle oversized logs:', error);
+    }
+  }
+
+  /**
+   * Compress a log file using gzip
+   */
+  async compressLogFile(filePath) {
+    try {
+      const zlib = require('zlib');
+      const pipeline = require('util').promisify(require('stream').pipeline);
+      
+      const gzipPath = filePath + '.gz';
+      const readStream = require('fs').createReadStream(filePath);
+      const writeStream = require('fs').createWriteStream(gzipPath);
+      const gzip = zlib.createGzip();
+
+      await pipeline(readStream, gzip, writeStream);
+      
+      // Delete original file after successful compression
+      await fs.unlink(filePath);
+      
+      this.emit('log', {
+        level: 'info',
+        message: `Compressed log file: ${path.basename(filePath)} -> ${path.basename(gzipPath)}`
+      });
+      
+      return true;
+    } catch (error) {
+      console.error(`Failed to compress log file ${filePath}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Start automatic log rotation timer
+   */
+  startLogRotationTimer() {
+    if (this.logRotationTimer) {
+      clearInterval(this.logRotationTimer);
+    }
+
+    // Rotate logs at configured interval (default: daily)
+    this.logRotationTimer = setInterval(async () => {
+      try {
+        await this.rotateCurrentLog();
+      } catch (error) {
+        console.error('Failed to rotate logs:', error);
+      }
+    }, this.config.logRotationInterval);
+  }
+
+  /**
+   * Stop automatic log rotation timer
+   */
+  stopLogRotationTimer() {
+    if (this.logRotationTimer) {
+      clearInterval(this.logRotationTimer);
+      this.logRotationTimer = null;
+    }
+  }
+
+  /**
+   * Emergency log cleanup during network stress
+   */
+  async emergencyLogCleanup() {
+    this.emit('log', {
+      level: 'warn',
+      message: 'Performing emergency log cleanup due to disk space or network stress'
+    });
+
+    try {
+      // Reduce memory log buffer significantly during stress
+      if (this.logs.length > 100) {
+        this.logs = this.logs.slice(-100);
+      }
+
+      // Force rotate current log if it's large
+      if (this.currentLogFile) {
+        try {
+          const stats = await fs.stat(this.currentLogFile);
+          if (stats.size > 10 * 1024 * 1024) { // If > 10MB, rotate immediately
+            await this.rotateCurrentLog();
+          }
+        } catch (error) {
+          // Ignore stat errors
+        }
+      }
+
+      // Aggressively prune logs, keeping only the most recent 3
+      const logFiles = await this.getLogFiles();
+      const filesToDelete = logFiles.slice(0, -3);
+
+      for (const file of filesToDelete) {
+        try {
+          await fs.unlink(file);
+        } catch (error) {
+          // Ignore delete errors
+        }
+      }
+
+      this.emit('log', {
+        level: 'info',
+        message: `Emergency cleanup completed. Removed ${filesToDelete.length} log files.`
+      });
+    } catch (error) {
+      console.error('Emergency log cleanup failed:', error);
+    }
+  }
+
+  /**
    * Get storage statistics
    */
   async getStorageStats() {
@@ -890,15 +1180,23 @@ class POAStorageNode extends EventEmitter {
     const version = await this.getVersion();
     const updateInfo = await this.checkForUpdates();
     
+    // Check if process is actually running
+    const actuallyRunning = await this.checkRunning();
+    
     return {
-      running: this.running,
-      connected: this.running,  // Storage nodes are connected if they're running
+      running: actuallyRunning,
+      connected: actuallyRunning,  // Storage nodes are connected if they're running
       version,
       updateAvailable: updateInfo?.updateAvailable || false,
       account: this.config.account,
       nodeType: this.config.nodeType === 1 ? 'Validator' : 'Storage',
       stats: this.stats,
-      logs: this.getRecentLogs(10)
+      logs: this.getRecentLogs(10),
+      processInfo: {
+        pid: this.pid,
+        internalRunning: this.running,
+        actuallyRunning: actuallyRunning
+      }
     };
   }
 

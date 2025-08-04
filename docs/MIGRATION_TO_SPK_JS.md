@@ -1,7 +1,7 @@
 # Migration to SPK-JS Integration
 
 ## Overview
-This document describes the migration from the custom SPK client implementation to using the official `@spknetwork/spk-js` library.
+This document describes the migration from the custom SPK client implementation to using the official `@disregardfiat/spk-js` library.
 
 ## Changes Made
 

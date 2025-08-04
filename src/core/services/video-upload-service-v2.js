@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs').promises;
 const { v4: uuidv4 } = require('uuid');
-const SPK = require('@spknetwork/spk-js');
+const SPK = require('@disregardfiat/spk-js');
 const SPKKeychainAdapter = require('../spk/keychain-adapter');
 
 /**

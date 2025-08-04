@@ -60,7 +60,7 @@ function setupSPKHandlers() {
   // Calculate BROCA cost
   ipcMain.handle('spk:calculateBrocaCost', async (event, size, options) => {
     try {
-      const SPK = require('@spknetwork/spk-js');
+      const SPK = require('@disregardfiat/spk-js');
       const cost = SPK.BROCACalculator.calculateStorageCost(size, options.duration || 30);
       
       return { 

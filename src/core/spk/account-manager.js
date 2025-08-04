@@ -284,6 +284,9 @@ class AccountManager extends EventEmitter {
       throw new Error('Account not found');
     }
 
+    // Normalize keyType to lowercase for consistency
+    const normalizedKeyType = keyType.toLowerCase();
+
     // Check key hierarchy: try requested key, then higher authority keys
     const keyHierarchy = {
       posting: ['posting', 'active', 'owner'],
@@ -292,7 +295,7 @@ class AccountManager extends EventEmitter {
     };
 
     let privateKey = null;
-    const tryKeys = keyHierarchy[keyType] || [keyType];
+    const tryKeys = keyHierarchy[normalizedKeyType] || [normalizedKeyType];
 
     for (const key of tryKeys) {
       if (account[key]) {
@@ -302,7 +305,7 @@ class AccountManager extends EventEmitter {
     }
 
     if (!privateKey) {
-      throw new Error(`No ${keyType} key available for ${username}`);
+      throw new Error(`No ${normalizedKeyType} key available for ${username}`);
     }
 
     this.resetSessionTimer();
@@ -463,7 +466,7 @@ class AccountManager extends EventEmitter {
     
     const privateKeyStr = account[normalizedKeyType];
     if (!privateKeyStr) {
-      throw new Error(`No ${keyType} key available for ${username}`);
+      throw new Error(`No ${normalizedKeyType} key available for ${username}`);
     }
 
     console.log('Checking environment - window:', typeof window, 'require:', typeof require);

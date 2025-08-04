@@ -6,8 +6,13 @@ const Transcoder = require('../core/ffmpeg/transcoder');
 const PlaylistProcessor = require('../core/ffmpeg/playlist-processor');
 const IPFSManager = require('../core/ipfs/ipfs-manager');
 const POAStorageNode = require('../core/storage/poa-storage-node');
+const StorageNodeManager = require('../core/storage/storage-node-manager');
 const ContractMonitor = require('../core/storage/contract-monitor');
 const VideoUploadService = require('../core/services/video-upload-service');
+const DirectUploadService = require('../core/services/direct-upload-service');
+const IntegratedStorageService = require('../core/services/integrated-storage-service');
+const SettingsManager = require('../core/settings/settings-manager');
+const PendingUploadsManager = require('../core/services/pending-uploads-manager');
 
 // SPK modules
 const SPKClientWrapper = require('../core/spk/spk-client-wrapper');
@@ -26,6 +31,7 @@ function createWindow() {
       nodeIntegration: true,
       contextIsolation: false,
       webSecurity: false
+      // Enable remote debugging for MCP access
     },
     icon: path.join(__dirname, '../renderer/assets/icon.png')
   });
@@ -41,9 +47,21 @@ function createWindow() {
  * Initialize services
  */
 async function initializeServices() {
-  // Initialize SPK client wrapper
+  // Initialize settings manager first
+  services.settingsManager = new SettingsManager();
+  await services.settingsManager.init();
+
+  // Initialize SPK client wrapper with settings
   services.spkClient = new SPKClientWrapper();
   services.spkClient.mainWindow = mainWindow; // Set reference for IPC
+  
+  // Configure SPK client with settings
+  const networkSettings = services.settingsManager.getNetworkSettings();
+  services.spkClient.config = {
+    spkNode: networkSettings.spkNode,
+    isTestnet: networkSettings.isTestnet
+  };
+  
   await services.spkClient.initialize();
 
   // Initialize core services
@@ -51,21 +69,137 @@ async function initializeServices() {
   services.playlistProcessor = new PlaylistProcessor();
   services.ipfsManager = new IPFSManager();
   services.storageNode = new POAStorageNode();
+  services.storageNodeManager = new StorageNodeManager(services.spkClient, {
+    node: networkSettings.spkNode,
+    honeygraphUrl: networkSettings.honeygraphUrl
+  });
   services.contractMonitor = new ContractMonitor({
     ipfsManager: services.ipfsManager,
     storageNode: services.storageNode
   });
   
-  // Initialize upload service
+  // Initialize pending uploads manager
+  services.pendingUploadsManager = new PendingUploadsManager();
+  await services.pendingUploadsManager.init();
+  
+  // Initialize direct upload service
+  services.directUploadService = new DirectUploadService({
+    ipfsManager: services.ipfsManager,
+    spkClient: services.spkClient,
+    pendingUploadsManager: services.pendingUploadsManager
+  });
+  
+  // Initialize integrated storage service
+  services.integratedStorage = new IntegratedStorageService({
+    ipfsManager: services.ipfsManager,
+    poaStorageNode: services.storageNode,
+    spkClient: services.spkClient,
+    videoUploadService: null // Will be set later
+  });
+  
+  // Initialize upload service with all dependencies
   services.videoUploadService = new VideoUploadService({
     transcoder: services.transcoder,
     playlistProcessor: services.playlistProcessor,
     ipfsManager: services.ipfsManager,
-    spkClient: services.spkClient
+    spkClient: services.spkClient,
+    integratedStorage: services.integratedStorage,
+    directUploadService: services.directUploadService
   });
+  
+  // Set circular reference
+  services.integratedStorage.videoUploadService = services.videoUploadService;
 
   // Setup service event handlers
   setupServiceHandlers();
+  
+  // Check for pending uploads on startup (after a delay for full initialization)
+  setTimeout(async () => {
+    await checkPendingUploadsOnStartup();
+  }, 5000);
+}
+
+/**
+ * Check pending uploads on startup and verify CIDs exist in IPFS
+ */
+async function checkPendingUploadsOnStartup() {
+  try {
+    console.log('🔍 [Startup] Checking for pending uploads...');
+    
+    const pendingUploads = await services.pendingUploadsManager.getPendingUploads();
+    const uploadingUploads = pendingUploads.filter(upload => upload.status === 'uploading');
+    
+    if (uploadingUploads.length === 0) {
+      console.log('✅ [Startup] No pending uploads found');
+      return;
+    }
+    
+    console.log(`📋 [Startup] Found ${uploadingUploads.length} pending uploads to verify`);
+    
+    for (const upload of uploadingUploads) {
+      try {
+        console.log(`🔍 [Startup] Checking upload: ${upload.id}`);
+        
+        if (!upload.cids || upload.cids.length === 0) {
+          console.log(`⚠️ [Startup] Upload ${upload.id} has no CIDs, marking as failed`);
+          await services.pendingUploadsManager.updateUploadStatus(upload.id, 'failed', {
+            error: 'No CIDs found for upload',
+            failedAt: new Date().toISOString()
+          });
+          continue;
+        }
+        
+        // Check if all CIDs exist in our IPFS node
+        let missingCIDs = 0;
+        let existingCIDs = 0;
+        
+        for (const cid of upload.cids) {
+          try {
+            // Check if CID exists in our IPFS node by trying to get it
+            await services.ipfsManager.getFile(cid);
+            existingCIDs++;
+            console.log(`✅ [Startup] Found CID in IPFS: ${cid}`);
+          } catch (error) {
+            missingCIDs++;
+            console.log(`❌ [Startup] Missing CID in IPFS: ${cid} - ${error.message}`);
+          }
+        }
+        
+        console.log(`📊 [Startup] Upload ${upload.id}: ${existingCIDs} existing, ${missingCIDs} missing CIDs`);
+        
+        if (missingCIDs > 0) {
+          // Some files are missing from IPFS - mark as failed
+          await services.pendingUploadsManager.updateUploadStatus(upload.id, 'failed', {
+            error: `Missing ${missingCIDs} files from IPFS node`,
+            failedAt: new Date().toISOString()
+          });
+          console.log(`❌ [Startup] Upload ${upload.id} marked as failed - missing files`);
+        } else {
+          // All files exist in IPFS - we can continue the upload
+          console.log(`✅ [Startup] Upload ${upload.id} has all files in IPFS - can be resumed`);
+          console.log(`💡 [Startup] User can retry upload ${upload.id} from pending uploads UI`);
+          
+          // Update with note that files are ready
+          await services.pendingUploadsManager.updateUploadStatus(upload.id, 'ready_to_retry', {
+            note: 'All files exist in IPFS, ready to retry broadcast',
+            checkedAt: new Date().toISOString()
+          });
+        }
+        
+      } catch (error) {
+        console.error(`❌ [Startup] Error checking upload ${upload.id}:`, error);
+        await services.pendingUploadsManager.updateUploadStatus(upload.id, 'failed', {
+          error: `Startup check failed: ${error.message}`,
+          failedAt: new Date().toISOString()
+        });
+      }
+    }
+    
+    console.log('✅ [Startup] Pending uploads check completed');
+    
+  } catch (error) {
+    console.error('❌ [Startup] Failed to check pending uploads:', error);
+  }
 }
 
 /**
@@ -288,11 +422,21 @@ function setupIPCHandlers() {
     return services.transcoder.analyzeVideo(videoPath);
   });
 
-  ipcMain.handle('video:upload', async (event, videoPath, options) => {
+  ipcMain.handle('video:upload', async (event, videoPath, options = {}) => {
     try {
-      const result = await services.videoUploadService.uploadVideo(videoPath, options);
+      // Ensure direct upload is used by default
+      const uploadOptions = {
+        uploadMethod: 'direct',
+        ...options
+      };
+      
+      console.log(`🎬 [VideoUpload] Starting video upload: ${videoPath}`);
+      console.log(`⚙️ [VideoUpload] Options:`, uploadOptions);
+      
+      const result = await services.videoUploadService.uploadVideo(videoPath, uploadOptions);
       return { success: true, result };
     } catch (error) {
+      console.error(`❌ [VideoUpload] Upload failed:`, error);
       return { success: false, error: error.message };
     }
   });
@@ -536,12 +680,17 @@ function setupIPCHandlers() {
 
   // Storage node operations
   ipcMain.handle('storage:start', async () => {
+    console.log('[DEBUG] storage:start called');
     try {
       // Get active account for POA
-      const account = await services.spkClient.getActiveAccount();
-      if (!account) {
+      const activeUsername = await services.spkClient.getActiveAccount();
+      console.log('[DEBUG] Storage start - active account username:', activeUsername);
+      if (!activeUsername) {
         return { success: false, error: 'No active account' };
       }
+      
+      const account = { username: activeUsername };
+      console.log('Storage start - using account:', account);
       
       // NOTE: Storage node and contract monitor only need the username,
       // not wallet access. They will continue running even if wallet locks.
@@ -559,7 +708,7 @@ function setupIPCHandlers() {
       
       // Configure POA with account and IPFS settings
       services.storageNode.config.account = account.username;
-      services.storageNode.config.spkApiUrl = services.spkClient.config.spkNode;
+      services.storageNode.config.spkApiUrl = services.spkClient.config?.spkNode || 'https://spktest.dlux.io';
       services.storageNode.config.ipfsPort = ipfsConfig.port || 5001;
       services.storageNode.config.ipfsHost = ipfsConfig.host || '127.0.0.1';
       
@@ -568,7 +717,7 @@ function setupIPCHandlers() {
       // Start contract monitoring when storage node starts
       try {
         services.contractMonitor.config.username = account.username;
-        services.contractMonitor.config.spkApiUrl = services.spkClient.config.spkNode;
+        services.contractMonitor.config.spkApiUrl = services.spkClient.config?.spkNode || 'https://spktest.dlux.io';
         await services.contractMonitor.start();
       } catch (monitorError) {
         console.error('Failed to start contract monitor:', monitorError);
@@ -622,7 +771,53 @@ function setupIPCHandlers() {
   });
 
   ipcMain.handle('storage:getStatus', async () => {
-    return services.storageNode.getStatus();
+    console.log('[DEBUG] storage:getStatus called');
+    // Always check the actual storage node status first
+    const actualStatus = services.storageNode.getStatus();
+    console.log('[DEBUG] Actual storage status:', actualStatus);
+    
+    // If actually running, return that
+    if (actualStatus && actualStatus.running) {
+      console.log('[DEBUG] Storage node is actually running, returning actual status');
+      return actualStatus;
+    }
+    
+    // If not running, but we have fast status indicating it should be, 
+    // this means we need to actually start it
+    console.log('[DEBUG] Checking if storage node manager exists and has getFastStatus');
+    if (services.storageNodeManager && services.storageNodeManager.getFastStatus) {
+      try {
+        console.log('[DEBUG] Getting fast status...');
+        const fastStatus = await services.storageNodeManager.getFastStatus();
+        console.log('[DEBUG] Fast status result:', fastStatus);
+        if (fastStatus.quickCheck && fastStatus.registered && fastStatus.ipfsRunning) {
+          console.log('[DEBUG] Conditions met for shouldAutoStart - returning shouldAutoStart: true');
+          // The node should be running but isn't - indicate it's available to start
+          return { 
+            running: false,
+            registered: fastStatus.registered,
+            ipfsRunning: fastStatus.ipfsRunning,
+            shouldAutoStart: true, // NEW: Indicate this should auto-start
+            message: fastStatus.message,
+            cached: fastStatus.cached,
+            persisted: fastStatus.persisted
+          };
+        } else {
+          console.log('[DEBUG] Fast status conditions not met:', {
+            quickCheck: fastStatus.quickCheck,
+            registered: fastStatus.registered,
+            ipfsRunning: fastStatus.ipfsRunning
+          });
+        }
+      } catch (error) {
+        console.error('Fast status check failed:', error);
+      }
+    } else {
+      console.log('[DEBUG] Storage node manager not available or missing getFastStatus');
+    }
+    
+    // Return actual status
+    return actualStatus || { running: false, registered: false };
   });
 
   ipcMain.handle('storage:validateRegistration', async (event, ipfsId, registrationInfo) => {
@@ -631,6 +826,24 @@ function setupIPCHandlers() {
 
   ipcMain.handle('storage:getRecentLogs', async (event, lines) => {
     return services.storageNode.getRecentLogs(lines || 100);
+  });
+
+  ipcMain.handle('storage:emergencyLogCleanup', async () => {
+    try {
+      await services.storageNode.emergencyLogCleanup();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('storage:pruneOldLogs', async () => {
+    try {
+      await services.storageNode.pruneOldLogs();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   });
 
   // Cost calculations
@@ -983,43 +1196,30 @@ function setupIPCHandlers() {
     }
   });
 
-  // Simple batch upload handler for spk-js
+  // Direct upload handler using DirectUploadService
   ipcMain.handle('upload:batch', async (event, { files, options }) => {
-    console.log('=== BATCH UPLOAD HANDLER CALLED ===');
-    console.log('[Upload] Starting batch upload with', files.length, 'files');
+    console.log('=== DIRECT UPLOAD HANDLER CALLED ===');
+    console.log('[DirectUpload] Starting direct upload with', files.length, 'files');
+    
     try {
       const currentAccount = services.spkClient.getActiveAccount();
-      console.log('[Upload] Current account:', currentAccount);
+      console.log('[DirectUpload] Current account:', currentAccount);
       
       if (!currentAccount) {
         throw new Error('No active account. Please login first.');
       }
 
-      // Get SPK instance from spkClient
+      // Get SPK instance and set it in direct upload service
       const spkInstance = await services.spkClient.getSpkInstance(currentAccount);
-      console.log('[Upload] Got SPK instance');
-      
-      // Initialize the SPK instance
       await spkInstance.init();
-      console.log('[Upload] SPK instance initialized');
+      services.directUploadService.spkClient = spkInstance;
       
-      // Log what properties are available on the instance
-      console.log('[Upload] SPK instance properties:', Object.keys(spkInstance));
-      console.log('[Upload] SPK instance has fileUpload?', !!spkInstance.fileUpload);
-      
-      // Check keychain adapter structure
-      console.log('[Upload] Checking keychain adapter...');
-      console.log('[Upload] account.keychainAdapter exists?', !!spkInstance.account?.keychainAdapter);
-      console.log('[Upload] account.keychainAdapter.signer exists?', !!spkInstance.account?.keychainAdapter?.signer);
-      if (spkInstance.account?.keychainAdapter?.signer) {
-        console.log('[Upload] Signer methods:', Object.getOwnPropertyNames(spkInstance.account.keychainAdapter.signer));
-        console.log('[Upload] Signer has requestBroadcast?', typeof spkInstance.account.keychainAdapter.signer.requestBroadcast);
-      }
+      console.log('[DirectUpload] SPK instance set in DirectUploadService');
 
-      // Convert file data to Node.js compatible format for spk-js
-      console.log('[Upload] Converting files to Node.js format...');
+      // Convert file data to Node.js compatible format
+      console.log('[DirectUpload] Converting files to Node.js format...');
       const fileObjects = files.map((f, index) => {
-        console.log(`[Upload] Processing file ${index + 1}/${files.length}: ${f.name} (${f.size} bytes, type: ${f.type})`);
+        console.log(`[DirectUpload] Processing file ${index + 1}/${files.length}: ${f.name} (${f.size} bytes, type: ${f.type})`);
         const buffer = Buffer.from(f.buffer);
         return {
           name: f.name,
@@ -1028,97 +1228,33 @@ function setupIPCHandlers() {
           buffer: buffer
         };
       });
-      console.log('[Upload] File conversion complete');
+      console.log('[DirectUpload] File conversion complete');
 
-      // Upload files using spk-js nodeUpload for Node.js environment
-      console.log('[Upload] Starting nodeUpload with options:', JSON.stringify(options));
-      console.log('[Upload] File objects to upload:', fileObjects.map(f => ({
-        name: f.name,
-        size: f.size,
-        type: f.type,
-        hasBuffer: !!f.buffer,
-        bufferLength: f.buffer?.length
-      })));
+      // Use DirectUploadService for direct upload
+      console.log('[DirectUpload] Starting direct upload via DirectUploadService...');
+      const uploadResult = await services.directUploadService.directUpload(fileObjects, {
+        ...options, // Pass all options through
+        duration: options.duration || 30
+      });
       
-      // Try different approaches to access the upload functionality
-      console.log('[Upload] Checking spkInstance type:', typeof spkInstance);
-      console.log('[Upload] spkInstance constructor:', spkInstance?.constructor?.name);
-      
-      // Check if we can use the SPKFileUpload class directly
-      const SPK = require('/home/jr/dlux/spk-js/dist/spk-js.cjs.js');
-      console.log('[Upload] SPK module:', Object.keys(SPK));
-      
-      // Try to use the upload method directly on the instance
-      let uploadResult;
-      console.log('[Upload] Checking fileUpload:', !!spkInstance.fileUpload);
-      console.log('[Upload] spkInstance properties:', Object.keys(spkInstance));
-      
-      if (spkInstance.fileUpload) {
-        console.log('[Upload] fileUpload methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(spkInstance.fileUpload)));
-        console.log('[Upload] Has nodeUpload:', typeof spkInstance.fileUpload.nodeUpload);
-      }
-      
-      if (spkInstance.fileUpload && typeof spkInstance.fileUpload.nodeUpload === 'function') {
-        console.log('[Upload] Using fileUpload.nodeUpload');
-        uploadResult = await spkInstance.fileUpload.nodeUpload(fileObjects, {
-          duration: options.duration || 30,
-          metadata: options.metadata
-        });
-      } else if (spkInstance.upload) {
-        console.log('[Upload] WARNING: Falling back to direct upload method - this will fail for Node.js files!');
-        uploadResult = await spkInstance.upload(fileObjects, {
-          duration: options.duration || 30,
-          metadata: options.metadata
-        });
-      } else {
-        // Import the built spk-js directly and check what's available
-        console.log('[Upload] Trying to find Node.js upload method...');
-        
-        // Load the source TypeScript module to access SPKFileUpload
-        try {
-          // Try using the CommonJS build
-          const spkModule = require('/home/jr/dlux/spk-js/dist/spk-js.cjs.js');
-          console.log('[Upload] Looking for upload classes...');
-          
-          // Check if SPKFileUpload is available
-          if (spkModule.SPKFileUpload) {
-            console.log('[Upload] Found SPKFileUpload, creating instance...');
-            const fileUpload = new spkModule.SPKFileUpload(spkInstance.account);
-            uploadResult = await fileUpload.nodeUpload(fileObjects, {
-              duration: options.duration || 30,
-              metadata: options.metadata
-            });
-          } else {
-            // Last resort - use the local source directly
-            console.log('[Upload] Loading SPKFileUpload from source...');
-            const { SPKFileUpload } = require('/home/jr/dlux/spk-js/src/storage/file-upload');
-            const fileUpload = new SPKFileUpload(spkInstance.account);
-            uploadResult = await fileUpload.nodeUpload(fileObjects, {
-              duration: options.duration || 30,
-              metadata: options.metadata
-            });
-          }
-        } catch (err) {
-          console.error('[Upload] Failed to load SPKFileUpload:', err);
-          throw new Error('Unable to find Node.js upload method in spk-js');
-        }
-      }
-      console.log('[Upload] Upload result:', uploadResult);
+      console.log('[DirectUpload] Upload result:', uploadResult);
 
-      // Find master playlist CID
+      // Find master playlist CID if it exists
       const masterCid = uploadResult.files?.find(f => f.name === 'master.m3u8')?.cid;
 
       return {
         success: true,
         data: {
-          contractId: uploadResult.contract?.id,
+          uploadId: uploadResult.uploadId,
+          cids: uploadResult.cids,
+          files: uploadResult.files,
           masterUrl: masterCid ? `https://ipfs.dlux.io/ipfs/${masterCid}` : null,
           ...uploadResult
         }
       };
     } catch (error) {
-      console.error('[Upload] Error:', error);
-      console.error('[Upload] Error stack:', error.stack);
+      console.error('[DirectUpload] Error:', error);
+      console.error('[DirectUpload] Error stack:', error.stack);
       return { success: false, error: error.message };
     }
   });
@@ -1188,6 +1324,142 @@ function setupServiceHandlers() {
   services.storageNode.on('contract-registered', (contract) => {
     if (mainWindow) {
       mainWindow.webContents.send('storage:contract', contract);
+    }
+  });
+
+  // Settings management
+  ipcMain.handle('settings:get-all', async () => {
+    return services.settingsManager.getAll();
+  });
+
+  ipcMain.handle('settings:get', async (event, key) => {
+    return services.settingsManager.get(key);
+  });
+
+  ipcMain.handle('settings:set', async (event, { key, value }) => {
+    await services.settingsManager.set(key, value);
+    return { success: true };
+  });
+
+  ipcMain.handle('settings:update', async (event, updates) => {
+    await services.settingsManager.update(updates);
+    return { success: true };
+  });
+
+  ipcMain.handle('settings:reset', async () => {
+    await services.settingsManager.reset();
+    return { success: true };
+  });
+
+  ipcMain.handle('settings:export', async () => {
+    try {
+      const { dialog } = require('electron');
+      const { filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: 'Export Settings',
+        defaultPath: 'spk-desktop-settings.json',
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+
+      if (filePath) {
+        const result = await services.settingsManager.exportSettings(filePath);
+        return result;
+      }
+      return { success: false, error: 'No file selected' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('settings:import', async () => {
+    try {
+      const { dialog } = require('electron');
+      const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'Import Settings',
+        filters: [
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+        properties: ['openFile']
+      });
+
+      if (filePaths && filePaths.length > 0) {
+        const result = await services.settingsManager.importSettings(filePaths[0]);
+        return result;
+      }
+      return { success: false, error: 'No file selected' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('dialog:choose-directory', async () => {
+    try {
+      const { dialog } = require('electron');
+      const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'Choose Directory',
+        properties: ['openDirectory']
+      });
+
+      if (filePaths && filePaths.length > 0) {
+        return { success: true, path: filePaths[0] };
+      }
+      return { success: false, error: 'No directory selected' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('app:restart', async () => {
+    app.relaunch();
+    app.quit();
+  });
+
+  // Pending uploads management
+  ipcMain.handle('pending-uploads:get-all', async () => {
+    try {
+      return await services.pendingUploadsManager.getPendingUploads();
+    } catch (error) {
+      console.error('Failed to get pending uploads:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('pending-uploads:add', async (event, uploadData) => {
+    try {
+      return await services.pendingUploadsManager.addPendingUpload(uploadData);
+    } catch (error) {
+      console.error('Failed to add pending upload:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pending-uploads:confirm', async (event, uploadId) => {
+    try {
+      return await services.pendingUploadsManager.confirmUpload(uploadId);
+    } catch (error) {
+      console.error('Failed to confirm upload:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pending-uploads:fail', async (event, uploadId, errorMessage) => {
+    try {
+      return await services.pendingUploadsManager.failUpload(uploadId, errorMessage);
+    } catch (error) {
+      console.error('Failed to mark upload as failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pending-uploads:remove', async (event, uploadId) => {
+    try {
+      return await services.pendingUploadsManager.removeUpload(uploadId);
+    } catch (error) {
+      console.error('Failed to remove upload:', error);
+      return { success: false, error: error.message };
     }
   });
 }

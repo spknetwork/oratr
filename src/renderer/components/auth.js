@@ -61,7 +61,7 @@ class AuthComponent {
     window.api.on('spk:accounts-unlocked', (accounts) => {
       this.isUnlocked = true;
       this.accounts = accounts;
-      this.showAccountManager();
+      // Don't automatically show account manager - let the main renderer handle closing the overlay
     });
 
     window.api.on('spk:accounts-locked', () => {
@@ -484,45 +484,125 @@ class AuthComponent {
     const self = this;
     
     const accountsList = this.accounts.map(account => `
-      <div class="account-item ${account.username === this.activeAccount ? 'active' : ''}" data-username="${account.username}">
-        <div class="account-info">
-          <h4>${account.username}</h4>
-          <div class="account-keys">
-            ${account.hasPosting ? '<span class="key-badge">Posting</span>' : ''}
-            ${account.hasActive ? '<span class="key-badge">Active</span>' : ''}
-            ${account.hasMemo ? '<span class="key-badge">Memo</span>' : ''}
-            ${account.hasOwner ? '<span class="key-badge owner">Owner</span>' : ''}
+      <div class="account-card ${account.username === this.activeAccount ? 'active' : ''}" data-username="${account.username}">
+        <div class="account-header">
+          <div class="account-avatar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="8" r="5" fill="currentColor"/>
+              <path d="M20 21a8 8 0 1 0-16 0" fill="currentColor"/>
+            </svg>
           </div>
+          <div class="account-details">
+            <h4 class="account-name">${account.username}</h4>
+            ${account.username === this.activeAccount ? 
+              '<div class="status-badge active-status">Active Account</div>' : 
+              '<div class="status-badge">Inactive</div>'
+            }
+          </div>
+          ${account.username === this.activeAccount ? 
+            '<div class="active-indicator"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>' : 
+            ''
+          }
         </div>
+        
+        <div class="account-keys">
+          ${account.hasPosting ? '<span class="key-badge posting">Posting</span>' : ''}
+          ${account.hasActive ? '<span class="key-badge active">Active</span>' : ''}
+          ${account.hasMemo ? '<span class="key-badge memo">Memo</span>' : ''}
+          ${account.hasOwner ? '<span class="key-badge owner">Owner</span>' : ''}
+        </div>
+        
         <div class="account-actions">
           ${account.username !== this.activeAccount ? 
-            `<button class="btn btn-sm set-active-btn" data-username="${account.username}">Set Active</button>` : 
-            '<span class="active-badge">Active</span>'
+            `<button class="btn btn-outline set-active-btn" data-username="${account.username}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Set Active
+            </button>` : ''
           }
-          <button class="btn btn-sm edit-btn" data-username="${account.username}">Edit</button>
-          <button class="btn btn-sm btn-danger remove-btn" data-username="${account.username}">Remove</button>
+          <button class="btn btn-ghost edit-btn" data-username="${account.username}" title="Edit Account">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="btn btn-ghost btn-danger remove-btn" data-username="${account.username}" title="Remove Account">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 6h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     `).join('');
 
     this.container.innerHTML = `
       <div class="auth-container">
-        <div class="header">
-          <h2>Accounts</h2>
-          <div class="header-buttons">
-            <button class="btn btn-sm" id="lock-btn">Lock</button>
-            <button class="btn btn-sm" id="close-btn">Close</button>
+        <div class="auth-header">
+          <div class="auth-title">
+            <div class="auth-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" fill="currentColor"/>
+                <path d="M12 14C7.58172 14 4 17.5817 4 22H20C20 17.5817 16.4183 14 12 14Z" fill="currentColor"/>
+              </svg>
+            </div>
+            <h2>Account Manager</h2>
+          </div>
+          <div class="auth-header-actions">
+            <button class="btn-icon" id="lock-btn" title="Lock Wallet">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 10V8C6 5.79086 7.79086 4 10 4H14C16.2091 4 18 5.79086 18 8V10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <rect x="4" y="10" width="16" height="10" rx="2" fill="currentColor"/>
+              </svg>
+            </button>
+            <button class="btn-icon" id="close-btn" title="Close">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
         </div>
         
-        <div class="accounts-list">
-          ${accountsList || '<p>No accounts added yet</p>'}
+        <div class="accounts-section">
+          <div class="section-title">
+            <h3>Your Accounts</h3>
+            <span class="account-count">${this.accounts.length} account${this.accounts.length !== 1 ? 's' : ''}</span>
+          </div>
+          
+          <div class="accounts-grid">
+            ${accountsList || '<div class="empty-state"><div class="empty-icon">👤</div><p>No accounts added yet</p><span>Add your first account to get started</span></div>'}
+          </div>
         </div>
         
-        <div class="actions">
-          <button class="btn btn-primary" id="add-account-btn">Add Account</button>
-          <button class="btn" id="export-import-btn">Export/Import</button>
-          <button class="btn btn-danger btn-sm" id="reset-btn">Reset All</button>
+        <div class="auth-actions">
+          <button class="btn btn-primary" id="add-account-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 5V19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Add Account
+          </button>
+          <button class="btn btn-secondary" id="export-import-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M16 13H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M16 17H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Export/Import
+          </button>
+          <button class="btn btn-danger" id="reset-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 6H5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M8 6V4C8 2.89543 8.89543 2 10 2H14C15.1046 2 16 2.89543 16 4V6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M19 6V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Reset All
+          </button>
         </div>
       </div>
     `;

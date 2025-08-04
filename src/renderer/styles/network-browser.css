@@ -302,3 +302,22 @@
 .browser-content::-webkit-scrollbar-thumb:hover {
     background: #666;
 }
+
+/* Status Messages */
+.loading, .error, .message {
+    text-align: center;
+    padding: 40px 20px;
+    font-size: 16px;
+}
+
+.loading {
+    color: #999;
+}
+
+.error {
+    color: #f44336;
+}
+
+.message {
+    color: #81c784;
+}

@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 const AccountManager = require('./account-manager');
 
 // Import from the installed spk-js package
-const SPK = require('@spknetwork/spk-js');
+const SPK = require('@disregardfiat/spk-js');
 
 /**
  * SPK Client for Desktop
@@ -195,7 +195,7 @@ class SPKClient extends EventEmitter {
       const balances = await this.spkInstance.getBalances(refresh);
       
       // Calculate BROCA available
-      const { BrocaCalculator } = require('@spknetwork/spk-js');
+      const { BrocaCalculator } = require('@disregardfiat/spk-js');
       const brocaAvailable = BrocaCalculator.available(this.spkInstance.account);
       
       // Add BROCA info to balances
@@ -486,7 +486,7 @@ class SPKClient extends EventEmitter {
   get broca() {
     if (!this.spkInstance) {
       // Return a static calculator that doesn't need an instance
-      const { BrocaCalculator } = require('@spknetwork/spk-js');
+      const { BrocaCalculator } = require('@disregardfiat/spk-js');
       return BrocaCalculator;
     }
     return this.spkInstance.broca;
@@ -1286,43 +1286,39 @@ class SPKClient extends EventEmitter {
    * Build metadata string for upload using spk-js metadata system
    */
   buildMetadataString(fileData, options = {}) {
-    // This should be handled by spk-js, but for now we'll build a simple version
-    // TODO: Use proper spk-js metadata building once integrated
+    // Use proper spk-js metadata building
+    const { buildMetadataFromFiles } = require('@disregardfiat/spk-js/storage/metadata');
     
-    let metaString = '1'; // Version
-    
-    // Add encryption keys if provided (empty for unencrypted)
-    if (options.encryptionKeys) {
-      metaString += options.encryptionKeys;
-    }
-    
-    // For video uploads, we just use the Videos folder preset (ID: 4)
-    metaString += '|4'; // Videos folder ID
-    
-    // Add file metadata
-    const fileMetaEntries = [];
+    // Convert fileData to SimpleFileData format expected by spk-js
+    const files = [];
     for (const data of fileData.files) {
       const meta = data.metadata;
-      // For hidden files (video segments), use empty metadata
-      if (!meta.name || meta.name === '') {
-        fileMetaEntries.push(',,,2'); // 2 = hidden from file explorer
-      } else {
-        // Format: name,ext,thumb,flags-license-labels
-        // Regular files - no flags by default (visible in explorer)
-        const flags = meta.flag || ''; // Empty flags = visible
-        const license = meta.license || ''; // No license by default
-        const labels = meta.labels || ''; // No labels for now
-        const flagString = [flags, license, labels].filter(f => f).join('-');
-        
-        fileMetaEntries.push(`${meta.name},${meta.ext},${meta.thumb || ''},${flagString}`);
+      
+      // Determine folder path - for videos, use Videos preset folder
+      let folderPath = '';
+      if (meta.ext === 'mp4' || meta.ext === 'mov' || meta.ext === 'm3u8' || meta.ext === 'ts') {
+        folderPath = 'Videos';
       }
+      
+      files.push({
+        cid: data.cid || 'placeholder', // CID will be set during upload
+        name: meta.name || '',
+        ext: meta.ext || '',
+        path: folderPath ? `${folderPath}/${meta.name}.${meta.ext}` : '',
+        thumb: meta.thumb || '',
+        encrypted: false, // Not encrypted by default
+        hidden: !meta.name || meta.name === '', // Hidden if no name (video segments)
+        nsfw: false,
+        executable: false,
+        license: meta.license || '',
+        labels: meta.labels || '',
+      });
     }
     
-    if (fileMetaEntries.length > 0) {
-      metaString += ',' + fileMetaEntries.join(',');
-    }
+    // Build metadata string using spk-js
+    const metadataString = buildMetadataFromFiles(files, options.encryptionKeys || '');
     
-    return encodeURI(metaString);
+    return encodeURI(metadataString);
   }
 
   /**

@@ -17,22 +17,36 @@
             <div class="account-info">
                 <span id="account-name">No account</span>
                 <div id="account-balance" class="balance-mini"></div>
+                <button id="settings-btn" onclick="settingsModal.show()" title="Settings">⚙️</button>
                 <button id="account-btn" onclick="showAccountManager()">Accounts</button>
             </div>
         </header>
 
         <main>
             <div class="tabs">
-                <button class="tab active" onclick="showTab('upload')">Video Upload</button>
-                <button class="tab" onclick="showTab('ipfs')">IPFS Node</button>
-                <button class="tab" onclick="showTab('storage')">Storage Node</button>
-                <button class="tab" onclick="showTab('balance')">Balance</button>
-                <button class="tab" onclick="showTab('drive')">My Files</button>
+                <button class="tab active" onclick="showTab('drive')">My Files</button>
+                <button class="tab" onclick="showTab('upload')">Video Upload</button>
+                <button class="tab" onclick="showTab('balance')">Wallet</button>
+                <button class="tab" onclick="showTab('storage')" id="storage-tab-button">
+                    Storage Node
+                    <span class="status-indicator"></span>
+                </button>
             </div>
 
             <!-- Video Upload Tab -->
-            <div id="upload-tab" class="tab-content active">
+            <div id="upload-tab" class="tab-content">
                 <h2>Upload Video</h2>
+                
+                <!-- Pending Uploads Monitor -->
+                <div id="pending-uploads-container" style="display: none;">
+                    <div class="pending-uploads-header">
+                        <button id="pending-uploads-toggle" class="btn btn-secondary">
+                            📋 Show Pending Uploads (0)
+                        </button>
+                    </div>
+                    <div id="pending-uploads-list" class="pending-uploads-list"></div>
+                </div>
+                
                 <div class="upload-area">
                     <input type="file" id="video-input" accept="video/*" onchange="selectVideo(event)">
                     <label for="video-input" class="upload-label">
@@ -98,48 +112,33 @@
                         </div>
                     </div>
                     
-                    <div class="upload-method-preview">
+                    <div class="upload-method-preview" style="display: none;">
                         <h4>Upload Method</h4>
-                        <label>
-                            <input type="radio" name="preview-upload-method" value="direct" checked>
-                            Direct Upload to Storage Node
-                        </label>
-                        <label>
-                            <input type="radio" name="preview-upload-method" value="gateway">
-                            Upload to SPK Gateway
-                        </label>
+                        <input type="hidden" name="preview-upload-method" value="direct">
+                        <p>✅ Using Direct Upload (Storage Node Ready)</p>
                     </div>
                     
                     <div class="preview-actions">
                         <button onclick="addMoreResolutions()" class="btn btn-secondary">Add Resolutions</button>
                         <button onclick="retranscode()" class="btn btn-secondary">Re-transcode</button>
-                        <button onclick="proceedToUpload()" class="btn btn-primary">Proceed to Upload</button>
+                        <button onclick="startDirectUpload()" class="btn btn-primary">Upload Video Now</button>
                     </div>
                 </div>
                 
                 <!-- Upload Stage -->
                 <div id="upload-stage" class="upload-panel" style="display: none;">
-                    <h3>Upload to Storage</h3>
-                    
-                    <div class="upload-options-final">
-                        <div id="upload-method-selection"></div>
-                    </div>
+                    <h3>Uploading to SPK Network</h3>
                     
                     <div class="upload-progress-final">
                         <div class="progress-bar">
                             <div id="upload-progress-fill" class="progress-fill"></div>
                         </div>
-                        <p id="upload-progress-text">Ready to upload...</p>
+                        <p id="upload-progress-text">Uploading...</p>
                     </div>
                     
-                    <div id="upload-logs-container" class="upload-logs" style="display: none;">
-                        <h4>Upload Logs</h4>
+                    <div id="upload-logs-container" class="upload-logs">
+                        <h4>Upload Progress</h4>
                         <div id="upload-logs" class="logs-container"></div>
-                    </div>
-                    
-                    <div class="upload-actions">
-                        <button onclick="startFinalUpload()" id="start-upload-btn" class="btn btn-primary">Start Upload</button>
-                        <button onclick="backToPreview()" class="btn btn-secondary">Back to Preview</button>
                     </div>
                     
                     <div id="upload-completion-actions" class="completion-actions" style="display: none;">
@@ -150,99 +149,153 @@
                 </div>
             </div>
 
-            <!-- IPFS Tab -->
-            <div id="ipfs-tab" class="tab-content">
-                <h2>IPFS Node</h2>
-                
-                <div class="config-panel">
-                    <h3>Configuration</h3>
-                    <div class="config-options">
-                        <label>
-                            <input type="radio" name="ipfs-mode" value="internal" checked onchange="updateIPFSMode(this.value)">
-                            Internal Node (Managed by SPK Desktop)
-                        </label>
-                        <label>
-                            <input type="radio" name="ipfs-mode" value="external" onchange="updateIPFSMode(this.value)">
-                            External Node (Connect to existing)
-                        </label>
-                    </div>
-                    
-                    <div id="ipfs-internal-config" class="config-section">
-                        <div class="form-group">
-                            <label>Data Path:</label>
-                            <input type="text" id="ipfs-data-path" readonly>
-                            <button onclick="chooseIPFSPath()" class="btn btn-sm">Change</button>
-                        </div>
-                        <div class="form-group">
-                            <p class="info-text">Note: IPFS node will stop when you close the app. For 24/7 operation, use an external IPFS node or keep the app running.</p>
-                        </div>
-                        <div class="advanced-options">
-                            <details>
-                                <summary>Advanced Options</summary>
-                                <p class="info-text">To run IPFS as a background service:</p>
-                                <ul class="service-options">
-                                    <li><strong>Linux/Mac:</strong> Install PM2 (<code>npm install -g pm2</code>) and run:<br>
-                                        <code>pm2 start ./src/core/daemon/ipfs-daemon.js --name spk-ipfs</code></li>
-                                    <li><strong>Windows:</strong> Use Task Scheduler or run as a Windows Service (requires admin)</li>
-                                    <li><strong>All platforms:</strong> Use Docker: <code>docker run -d ipfs/kubo</code></li>
-                                </ul>
-                            </details>
-                        </div>
-                    </div>
-                    
-                    <div id="ipfs-external-config" class="config-section" style="display: none;">
-                        <div class="form-group">
-                            <label>Host:</label>
-                            <input type="text" id="ipfs-host" value="127.0.0.1">
-                        </div>
-                        <div class="form-group">
-                            <label>Port:</label>
-                            <input type="number" id="ipfs-port" value="5001">
-                        </div>
-                    </div>
-                    
-                    <button onclick="saveIPFSConfig()" class="btn btn-primary">Save Configuration</button>
-                </div>
-                
-                <div class="status-panel">
-                    <p>Status: <span id="ipfs-status">Stopped</span></p>
-                    <button onclick="toggleIPFS()" id="ipfs-toggle">Start IPFS</button>
-                </div>
-                
-                <div id="ipfs-info" class="info-panel" style="display: none;">
-                    <h3>Node Information</h3>
-                    <p>Node ID: <span id="ipfs-id"></span></p>
-                    <p>Version: <span id="ipfs-version"></span></p>
-                    <p>Peers: <span id="ipfs-peers">0</span></p>
-                    <div id="ipfs-addresses"></div>
-                    
-                    <h3>Storage</h3>
-                    <p>Repository Size: <span id="ipfs-repo-size">--</span></p>
-                    <p>Number of Objects: <span id="ipfs-num-objects">--</span></p>
-                    <p>Bandwidth In: <span id="ipfs-bw-in">--</span></p>
-                    <p>Bandwidth Out: <span id="ipfs-bw-out">--</span></p>
-                    
-                    <div class="actions">
-                        <button onclick="runIPFSGC()" class="btn btn-sm">Run Garbage Collection</button>
-                        <button onclick="refreshIPFSInfo()" class="btn btn-sm">Refresh</button>
-                    </div>
-                </div>
-            </div>
 
             <!-- Storage Node Tab -->
             <div id="storage-tab" class="tab-content">
-                <h2>Storage Node</h2>
+                <h2>Storage Node Setup</h2>
                 
-                <!-- Setup Section -->
-                <div id="storage-setup" class="setup-panel">
-                    <h3>Storage Node Setup</h3>
-                    <div id="poa-status" class="status-item">
-                        <p>POA Binary: <span id="poa-binary-status">Checking...</span></p>
-                        <button id="install-poa-btn" onclick="installPOA()" style="display: none;">Install POA</button>
+                <!-- Network Status Monitor (shown when running) -->
+                <div id="storage-network-monitor" class="network-monitor" style="display: none;">
+                    <div class="network-status-bar">
+                        <div class="status-indicator">
+                            <span class="status-light active"></span>
+                            <span>Storage Node Active</span>
+                        </div>
+                        <div class="network-stats">
+                            <span>Contracts: <span id="active-contracts">0</span></span>
+                            <span>Earned: <span id="total-earned">0</span> BROCA</span>
+                            <span>Storage: <span id="storage-usage">0MB / 0GB</span></span>
+                        </div>
+                        <button onclick="toggleStorageMonitor()" class="btn btn-sm">Hide Monitor</button>
+                    </div>
+                </div>
+                
+                <!-- Setup Steps -->
+                <div class="setup-wizard">
+                    <div class="wizard-progress">
+                        <div class="step active" data-step="1">
+                            <div class="step-number">1</div>
+                            <div class="step-label">IPFS</div>
+                        </div>
+                        <div class="step" data-step="2">
+                            <div class="step-number">2</div>
+                            <div class="step-label">POA</div>
+                        </div>
+                        <div class="step" data-step="3">
+                            <div class="step-number">3</div>
+                            <div class="step-label">Registration</div>
+                        </div>
+                        <div class="step" data-step="4">
+                            <div class="step-number">4</div>
+                            <div class="step-label">Status</div>
+                        </div>
                     </div>
                     
-                    <div id="storage-registration" class="config-panel">
-                        <h4>SPK Network Registration</h4>
+                    <!-- Step 1: IPFS Configuration -->
+                    <div id="step-1" class="wizard-step active">
+                        <h3>Step 1: IPFS Configuration</h3>
+                        <div class="config-panel">
+                            <div class="config-options">
+                                <label>
+                                    <input type="radio" name="ipfs-mode" value="internal" checked onchange="updateIPFSMode(this.value)">
+                                    Internal Node (Managed by SPK Desktop)
+                                </label>
+                                <label>
+                                    <input type="radio" name="ipfs-mode" value="external" onchange="updateIPFSMode(this.value)">
+                                    External Node (Connect to existing)
+                                </label>
+                            </div>
+                            
+                            <div id="ipfs-internal-config" class="config-section">
+                                <div class="form-group">
+                                    <label>Data Path:</label>
+                                    <input type="text" id="ipfs-data-path" readonly>
+                                    <button onclick="chooseIPFSPath()" class="btn btn-sm">Change</button>
+                                </div>
+                                <div class="form-group">
+                                    <label>Storage Limit:</label>
+                                    <div class="storage-limit-controls">
+                                        <input type="range" id="storage-limit-slider" min="1" max="1000" value="100" onchange="updateStorageLimit(this.value)">
+                                        <div class="storage-limit-display">
+                                            <span id="storage-limit-value">100 GB</span>
+                                            <small>Available: <span id="disk-space-available">-- GB</span></small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <p class="info-text">Note: IPFS node will stop when you close the app. For 24/7 operation, use an external IPFS node or keep the app running.</p>
+                                </div>
+                                <div class="advanced-options">
+                                    <details>
+                                        <summary>Advanced Options</summary>
+                                        <p class="info-text">To run IPFS as a background service:</p>
+                                        <ul class="service-options">
+                                            <li><strong>Linux/Mac:</strong> Install PM2 (<code>npm install -g pm2</code>) and run:<br>
+                                                <code>pm2 start ./src/core/daemon/ipfs-daemon.js --name spk-ipfs</code></li>
+                                            <li><strong>Windows:</strong> Use Task Scheduler or run as a Windows Service (requires admin)</li>
+                                            <li><strong>All platforms:</strong> Use Docker: <code>docker run -d ipfs/kubo</code></li>
+                                        </ul>
+                                    </details>
+                                </div>
+                            </div>
+                            
+                            <div id="ipfs-external-config" class="config-section" style="display: none;">
+                                <div class="form-group">
+                                    <label>Host:</label>
+                                    <input type="text" id="ipfs-host" value="127.0.0.1">
+                                </div>
+                                <div class="form-group">
+                                    <label>Port:</label>
+                                    <input type="number" id="ipfs-port" value="5001">
+                                </div>
+                            </div>
+                            
+                            <div class="status-panel">
+                                <p>Status: <span id="ipfs-status">Stopped</span></p>
+                                <div class="step-actions">
+                                    <button onclick="saveIPFSConfig()" class="btn btn-secondary">Save Configuration</button>
+                                    <button onclick="toggleIPFS()" id="ipfs-toggle" class="btn btn-primary">Start IPFS</button>
+                                </div>
+                            </div>
+                            
+                            <div id="ipfs-info" class="info-panel" style="display: none;">
+                                <h4>Node Information</h4>
+                                <p>Node ID: <span id="ipfs-id"></span></p>
+                                <p>Version: <span id="ipfs-version"></span></p>
+                                <p>Peers: <span id="ipfs-peers">0</span></p>
+                                <div id="ipfs-addresses"></div>
+                                
+                                <h4>Storage</h4>
+                                <p>Repository Size: <span id="ipfs-repo-size">--</span></p>
+                                <p>Number of Objects: <span id="ipfs-num-objects">--</span></p>
+                                <p>Bandwidth In: <span id="ipfs-bw-in">--</span></p>
+                                <p>Bandwidth Out: <span id="ipfs-bw-out">--</span></p>
+                                
+                                <div class="actions">
+                                    <button onclick="runIPFSGC()" class="btn btn-sm">Run Garbage Collection</button>
+                                    <button onclick="refreshIPFSInfo()" class="btn btn-sm">Refresh</button>
+                                    <button onclick="nextStep(2)" class="btn btn-primary">Next: POA Setup</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 2: POA Installation -->
+                    <div id="step-2" class="wizard-step">
+                        <h3>Step 2: POA Installation</h3>
+                        <div id="poa-status" class="status-item">
+                            <p>POA Binary: <span id="poa-binary-status">Checking...</span></p>
+                            <button id="install-poa-btn" onclick="installPOA()" style="display: none;" class="btn btn-primary">Install POA</button>
+                        </div>
+                        <div class="step-actions">
+                            <button onclick="prevStep(1)" class="btn btn-secondary">Previous</button>
+                            <button onclick="nextStep(3)" id="poa-next-btn" class="btn btn-primary" disabled>Next: Registration</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 3: Registration -->
+                    <div id="step-3" class="wizard-step">
+                        <h3>Step 3: SPK Network Registration</h3>
                         <div id="registration-status" class="status-item">
                             <p>Registration: <span id="spk-registration-status">Not checked</span></p>
                             <button onclick="checkRegistration()" class="btn btn-sm">Check Status</button>
@@ -257,83 +310,130 @@
                             </div>
                             <div class="form-group">
                                 <label>Registration Fee:</label>
-                                <input type="number" id="storage-price" value="2000" readonly disabled>
-                                <small>Fixed registration fee: 2000 BROCA</small>
+                                <div class="fee-display">
+                                    <span class="fee-amount">2000 LARYNX</span>
+                                    <span class="fee-note">(Fixed registration fee)</span>
+                                </div>
                             </div>
                             <button onclick="registerStorageNode()" class="btn btn-primary wallet-action">Register Storage Node</button>
                         </div>
+                        
+                        <div class="step-actions">
+                            <button onclick="prevStep(2)" class="btn btn-secondary">Previous</button>
+                            <button onclick="nextStep(4)" id="registration-next-btn" class="btn btn-primary" disabled>Next: Status Monitor</button>
+                        </div>
                     </div>
                     
-                    <!-- Configuration removed - using IPFS stats directly -->
-                </div>
-                
-                <!-- Control Section -->
-                <div class="status-panel">
-                    <p>Status: <span id="storage-status">Stopped</span></p>
-                    <button onclick="toggleStorage()" id="storage-toggle">Start Storage Node</button>
-                    <div id="storage-persistent-notice" style="display: none; margin-top: 10px; font-size: 12px; color: #4CAF50;">
-                        <strong>ℹ️ Note:</strong> Storage services run independently of wallet lock status.<br>
-                        Once started, they continue earning rewards even when the wallet times out.
+                    <!-- Step 4: Status Monitoring -->
+                    <div id="step-4" class="wizard-step">
+                        <h3>Step 4: Status Monitoring</h3>
+                        <div class="setup-complete">
+                            <p>✅ Your storage node is ready to start!</p>
+                            <div class="final-actions">
+                                <button onclick="startStorageNode()" class="btn btn-primary btn-large">Start Storage Node</button>
+                                <button onclick="prevStep(3)" class="btn btn-secondary">Previous</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
-                <!-- Info Section -->
-                <div id="storage-info" class="info-panel" style="display: none;">
-                    <div style="display: flex; justify-content: space-between; align-items: start;">
-                        <div style="flex: 1;">
-                            <h3>Storage Statistics</h3>
-                            <p>Space Used: <span id="storage-used">0 MB</span></p>
-                            <p>Space Available: <span id="storage-available">0 GB</span></p>
-                            <p>Files Stored: <span id="storage-files">0</span></p>
-                            <p>Active Contracts: <span id="storage-contracts">0</span></p>
-                            
-                            <h3>Earnings</h3>
-                            <p>Total Earned: <span id="storage-earned">0</span> BROCA</p>
-                            <p>Validations: <span id="storage-validations">0</span></p>
-                            <p>Last Validation: <span id="last-validation">Never</span></p>
-                            
-                            <h3>Network Status</h3>
-                            <p>Connected to SPK: <span id="spk-connected">No</span></p>
-                            <p>WebSocket Status: <span id="ws-status">Disconnected</span></p>
-                            <p>Version: <span id="poa-version">Unknown</span> <span id="update-available"></span></p>
+                <!-- Running Storage Node Dashboard (shown when active) -->
+                <div id="storage-dashboard" class="storage-dashboard" style="display: none;">
+                    <div class="dashboard-header">
+                        <h3>Storage Node Dashboard</h3>
+                        <div class="dashboard-controls">
+                            <button onclick="toggleStorage()" id="storage-toggle" class="btn btn-warning">Stop Storage Node</button>
+                            <button onclick="refreshStorageInfo()" class="btn btn-secondary">Refresh</button>
+                            <button onclick="showLogManagement()" class="btn btn-secondary">Manage Logs</button>
+                        </div>
+                    </div>
+                    
+                    <div class="dashboard-grid">
+                        <div class="dashboard-section">
+                            <h4>Storage Statistics</h4>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label">Space Used:</span>
+                                    <span class="stat-value" id="storage-used">0 MB</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Space Available:</span>
+                                    <span class="stat-value" id="storage-available">0 GB</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Files Stored:</span>
+                                    <span class="stat-value" id="storage-files">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Active Contracts:</span>
+                                    <span class="stat-value" id="storage-contracts">0</span>
+                                </div>
+                            </div>
                         </div>
                         
-                        <div style="flex: 1; margin-left: 20px;">
-                            <h3>Recent Activity</h3>
-                            <div id="poa-logs" style="background: #000; color: #0f0; padding: 10px; 
-                                        font-family: monospace; font-size: 12px; 
-                                        height: 200px; overflow-y: auto; 
-                                        border: 1px solid #333; border-radius: 4px;">
-                                <div style="color: #666;">Waiting for logs...</div>
+                        <div class="dashboard-section">
+                            <h4>Earnings & Performance</h4>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label">Total Earned:</span>
+                                    <span class="stat-value" id="storage-earned">0 BROCA</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Validations:</span>
+                                    <span class="stat-value" id="storage-validations">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Last Validation:</span>
+                                    <span class="stat-value" id="last-validation">Never</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Node Status:</span>
+                                    <span class="stat-value" id="node-status">Active</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-section">
+                            <h4>Network Status</h4>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label">Connected to SPK:</span>
+                                    <span class="stat-value" id="spk-connected">No</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">WebSocket Status:</span>
+                                    <span class="stat-value" id="ws-status">Disconnected</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">IPFS Peers:</span>
+                                    <span class="stat-value" id="ipfs-peers">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Version:</span>
+                                    <span class="stat-value" id="poa-version">Unknown</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-section full-width">
+                            <h4>Recent Activity</h4>
+                            <div id="poa-logs" class="activity-logs">
+                                <div class="log-placeholder">Waiting for logs...</div>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="actions" style="margin-top: 20px;">
-                        <button onclick="refreshStorageInfo()" class="btn btn-sm">Refresh</button>
-                        <button onclick="viewContracts()" class="btn btn-sm">View Contracts</button>
-                        <button onclick="viewFullLogs()" class="btn btn-sm">View Full Logs</button>
-                    </div>
-                    
-                    <!-- Contract Monitoring Section -->
-                    <div class="contract-monitor-section" style="margin-top: 20px;">
-                        <h3>Contract Monitoring</h3>
-                        <div class="monitor-status">
-                            <p>Monitor Status: <span id="monitor-status">Not running</span></p>
-                            <p>Active Contracts: <span id="monitor-contracts">0</span></p>
-                            <p>Pinned Files: <span id="monitor-pinned">0</span></p>
-                            <p>Last Check: <span id="monitor-last-check">Never</span></p>
-                        </div>
-                        <div class="monitor-actions" style="margin-top: 10px;">
-                            <button onclick="checkContractsNow()" class="btn btn-sm btn-primary">Check Now</button>
-                            <button onclick="viewPinnedCIDs()" class="btn btn-sm">View Pinned CIDs</button>
-                        </div>
+                    <div class="dashboard-actions">
+                        <button onclick="viewContracts()" class="btn btn-primary">View Active Contracts</button>
+                        <button onclick="checkContractsNow()" class="btn btn-secondary">Check Contracts Now</button>
+                        <button onclick="viewPinnedCIDs()" class="btn btn-secondary">View Pinned Files</button>
+                        <button onclick="viewFullLogs()" class="btn btn-secondary">View Full Logs</button>
+                        <button onclick="openNetworkBrowser()" class="btn btn-secondary">Browse Network Files</button>
                     </div>
                 </div>
                 
                 <!-- Network Browser Section -->
                 <div class="network-browser-section" style="margin-top: 30px;">
-                    <h3>Network File Browser</h3>
                     <div id="network-browser-container">
                         <!-- Network browser component will be inserted here -->
                     </div>
@@ -803,8 +903,66 @@
                 </div>
             </div>
 
+            <!-- Log Management Modal -->
+            <div id="log-management-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>📋 Storage Node Log Management</h3>
+                    
+                    <div class="log-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Current Log Size:</span>
+                            <span id="current-log-size" class="stat-value">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Total Log Files:</span>
+                            <span id="total-log-files" class="stat-value">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Total Log Space:</span>
+                            <span id="total-log-space" class="stat-value">--</span>
+                        </div>
+                    </div>
+
+                    <div class="log-actions">
+                        <h4>Log Management Actions</h4>
+                        <div class="action-group">
+                            <button onclick="pruneOldLogs()" class="btn btn-secondary">
+                                🗑️ Clean Old Logs
+                            </button>
+                            <small>Remove logs older than the retention period (keeps 10 most recent)</small>
+                        </div>
+                        
+                        <div class="action-group">
+                            <button onclick="emergencyLogCleanup()" class="btn btn-warning">
+                                ⚠️ Emergency Cleanup
+                            </button>
+                            <small>Aggressive cleanup - use during network stress or disk space issues</small>
+                        </div>
+                        
+                        <div class="action-group">
+                            <button onclick="viewFullLogs()" class="btn btn-secondary">
+                                📄 View Current Logs
+                            </button>
+                            <small>Open recent logs in a new window</small>
+                        </div>
+                    </div>
+
+                    <div class="log-settings">
+                        <h4>Log Rotation Settings</h4>
+                        <p><strong>Max file size:</strong> 50MB (auto-rotated)</p>
+                        <p><strong>Max files:</strong> 10 files kept</p>
+                        <p><strong>Rotation interval:</strong> Daily</p>
+                        <p><strong>Compression:</strong> Files >100MB are compressed</p>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" onclick="closeLogManagement()" class="btn btn-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Drive Tab -->
-            <div id="drive-tab" class="tab-content">
+            <div id="drive-tab" class="tab-content active">
                 <!-- Vue component will be mounted here -->
             </div>
             </div>
@@ -825,9 +983,12 @@
     
     <script src="components/auth.js"></script>
     <script src="components/signing-modal.js"></script>
+    <script src="components/settings-modal.js"></script>
     <script src="api/storage-api.js"></script>
     <script src="components/network-browser.js"></script>
     <script src="components/file-upload-modal.js"></script>
+    <script src="components/pending-uploads-monitor.js"></script>
+    <script src="components/simple-drag-drop.js"></script>
     <script src="video-processing-native.js"></script>
     <script src="renderer.js"></script>
     
