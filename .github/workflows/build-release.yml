@@ -47,6 +47,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build:mac
 
+      - name: List Linux build outputs
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "=== Build outputs ==="
+          ls -la dist/
+          
       - name: Upload Linux artifacts
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
