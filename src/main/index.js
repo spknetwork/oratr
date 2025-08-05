@@ -1140,6 +1140,52 @@ function setupIPCHandlers() {
     }
   });
 
+  // Storage node operations
+  ipcMain.handle('spk:storeFiles', async (event, contractIds) => {
+    try {
+      const result = await services.spkClient.storeFiles(contractIds);
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('spk:removeFiles', async (event, contractIds) => {
+    try {
+      const result = await services.spkClient.removeFiles(contractIds);
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('spk:batchStore', async (event, contractIds, chunkSize = 40) => {
+    try {
+      const result = await services.spkClient.batchStore(contractIds, chunkSize);
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('spk:getAvailableContracts', async (event, limit = 50) => {
+    try {
+      const result = await services.spkClient.getAvailableContracts(limit);
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('spk:getStoredContracts', async (event) => {
+    try {
+      const result = await services.spkClient.getStoredContracts();
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // Signing response handler
   ipcMain.handle('signing:respond', async (event, requestId, approved) => {
     // Call the stored handler

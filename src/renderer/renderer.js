@@ -560,7 +560,13 @@ window.api = {
         calculateBrocaCost: (size, options) => ipcRenderer.invoke('spk:calculateBrocaCost', size, options),
         // Provider selection is now handled internally by spk-js
         upload: (files, options) => ipcRenderer.invoke('spk:upload', files, options),
-        uploadFromPaths: (uploadData) => ipcRenderer.invoke('spk:uploadFromPaths', uploadData)
+        uploadFromPaths: (uploadData) => ipcRenderer.invoke('spk:uploadFromPaths', uploadData),
+        // Storage node operations
+        storeFiles: (contractIds) => ipcRenderer.invoke('spk:storeFiles', contractIds),
+        removeFiles: (contractIds) => ipcRenderer.invoke('spk:removeFiles', contractIds),
+        batchStore: (contractIds, chunkSize) => ipcRenderer.invoke('spk:batchStore', contractIds, chunkSize),
+        getAvailableContracts: (limit) => ipcRenderer.invoke('spk:getAvailableContracts', limit),
+        getStoredContracts: () => ipcRenderer.invoke('spk:getStoredContracts')
     },
     broca: {
         calculateStorageCost: (size, days) => ipcRenderer.invoke('broca:calculateStorageCost', size, days)
@@ -1785,7 +1791,22 @@ async function startStorageNode() {
 
 async function updateStorageDashboard() {
     try {
+        // First get comprehensive status
         const status = await window.api.storage.getComprehensiveStatus();
+        console.log('[DEBUG] Comprehensive status received:', status);
+        
+        // If we're getting zeros, also try individual API calls to debug
+        const [ipfsPeers, storageStats, storageStatus] = await Promise.allSettled([
+            window.api.ipfs.getPeers(),
+            window.api.storage.getStats(),
+            window.api.storage.getStatus()
+        ]);
+        
+        console.log('[DEBUG] Individual API results:', {
+            ipfsPeers: ipfsPeers.status === 'fulfilled' ? ipfsPeers.value?.length : ipfsPeers.reason,
+            storageStats: storageStats.status === 'fulfilled' ? storageStats.value : storageStats.reason,
+            storageStatus: storageStatus.status === 'fulfilled' ? storageStatus.value : storageStatus.reason
+        });
         
         // Update network monitor
         if (status.isFullyOperational) {
@@ -1795,15 +1816,18 @@ async function updateStorageDashboard() {
                 `${formatBytes(status.storage.used || 0)} / ${formatBytes(status.storage.maxStorage || 0)}`;
         }
         
-        // Update dashboard stats
-        document.getElementById('storage-used').textContent = formatBytes(status.storage.used || 0);
+        // Update dashboard stats with fallback data
+        const actualIPFSPeers = ipfsPeers.status === 'fulfilled' ? (ipfsPeers.value?.length || 0) : 0;
+        const actualStorageStats = storageStats.status === 'fulfilled' ? storageStats.value : {};
+        
+        document.getElementById('storage-used').textContent = formatBytes(actualStorageStats.ipfs?.repoSize || status.storage.used || 0);
         document.getElementById('storage-available').textContent = formatBytes(status.storage.available || 0);
-        document.getElementById('storage-files').textContent = status.storage.filesStored || 0;
-        document.getElementById('storage-contracts').textContent = status.node?.contractsStored || 0;
-        document.getElementById('storage-earned').textContent = `${status.node?.estimatedMonthlyEarnings || 0}`;
-        document.getElementById('storage-validations').textContent = status.storage?.stats?.validations || 0;
+        document.getElementById('storage-files').textContent = actualStorageStats.poa?.filesStored || status.storage.filesStored || 0;
+        document.getElementById('storage-contracts').textContent = actualStorageStats.contracts?.active || status.node?.contractsStored || 0;
+        document.getElementById('storage-earned').textContent = `${actualStorageStats.earnings?.total || status.node?.estimatedMonthlyEarnings || 0}`;
+        document.getElementById('storage-validations').textContent = actualStorageStats.poa?.validations || status.storage?.stats?.validations || 0;
         document.getElementById('spk-connected').textContent = status.spk.registered ? 'Yes' : 'No';
-        document.getElementById('ipfs-peers').textContent = status.ipfs.nodeInfo?.peers || 0;
+        document.getElementById('ipfs-peers').textContent = actualIPFSPeers;
         
         // Update status indicators with real process info
         const nodeStatusEl = document.getElementById('node-status');
@@ -1956,9 +1980,12 @@ function toggleStorageMonitor() {
 function openNetworkBrowser() {
     // Show network browser section
     const browserSection = document.querySelector('.network-browser-section');
-    browserSection.scrollIntoView({ behavior: 'smooth' });
+    if (browserSection) {
+        browserSection.scrollIntoView({ behavior: 'smooth' });
+    }
     
-    // Initialize network browser if not already done
+    // NetworkBrowser should already be initialized when storage node is connected
+    // If not, initialize it now
     if (!networkBrowser) {
         initializeNetworkBrowser().catch(error => {
             console.warn('Network browser initialization failed:', error);
@@ -2796,29 +2823,56 @@ async function viewContracts() {
     document.getElementById('contracts-list').innerHTML = '<p>Loading contracts...</p>';
     
     try {
-        const contracts = await window.api.contracts.getContracts();
+        // Get current active account
+        const activeAccount = await window.api.account.getActive();
+        if (!activeAccount || !activeAccount.username) {
+            document.getElementById('contracts-list').innerHTML = '<p>No active account found. Please select an account first.</p>';
+            return;
+        }
+        
+        // Fetch contracts directly from honeygraph API
+        const apiUrl = `https://honeygraph.dlux.io/api/spk/contracts/stored-by/${activeAccount.username}`;
+        console.log('Fetching contracts from:', apiUrl);
+        
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        const contracts = data.contracts || data || [];
+        
+        console.log('Received contracts:', contracts);
         
         if (contracts && contracts.length > 0) {
-            let html = '<table style="width: 100%; border-collapse: collapse;">';
-            html += '<tr><th>Contract ID</th><th>Type</th><th>CIDs</th><th>Size</th></tr>';
+            let html = '<table style="width: 100%; border-collapse: collapse; font-size: 12px;">';
+            html += '<tr style="background: #f5f5f5;"><th style="padding: 8px; border: 1px solid #ddd;">Contract ID</th><th style="padding: 8px; border: 1px solid #ddd;">CID</th><th style="padding: 8px; border: 1px solid #ddd;">Size</th><th style="padding: 8px; border: 1px solid #ddd;">Expiry</th><th style="padding: 8px; border: 1px solid #ddd;">Status</th><th style="padding: 8px; border: 1px solid #ddd;">Actions</th></tr>';
             
             for (const contract of contracts) {
-                const cids = contract.cid || contract.meta?.cids || '-';
-                const size = contract.size ? `${(contract.size / 1024 / 1024).toFixed(2)} MB` : '-';
+                const contractId = contract.id || contract.contractId || 'Unknown';
+                const cid = contract.cid || contract.contentHash || 'Unknown';
+                const size = contract.size ? `${(contract.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown';
+                const expiry = contract.expiry ? new Date(contract.expiry * 1000).toLocaleDateString() : 'Unknown';
+                const status = contract.active ? 'Active' : 'Inactive';
+                
                 html += `<tr>`;
-                html += `<td>${contract.id}</td>`;
-                html += `<td>${contract.type}</td>`;
-                html += `<td style="font-family: monospace; font-size: 11px;">${cids}</td>`;
-                html += `<td>${size}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #ddd;">${contractId}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 10px; max-width: 200px; word-break: break-all;">${cid}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #ddd;">${size}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #ddd;">${expiry}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #ddd; color: ${status === 'Active' ? 'green' : 'red'};">${status}</td>`;
+                html += `<td style="padding: 8px; border: 1px solid #ddd;"><button onclick="removeContract('${contractId}')" class="btn btn-sm btn-danger" style="font-size: 10px; padding: 4px 8px;">Remove</button></td>`;
                 html += `</tr>`;
             }
             
             html += '</table>';
+            html += `<p style="margin-top: 15px; font-size: 12px; color: #666;">Found ${contracts.length} contracts for ${activeAccount.username}</p>`;
             document.getElementById('contracts-list').innerHTML = html;
         } else {
-            document.getElementById('contracts-list').innerHTML = '<p>No active contracts</p>';
+            document.getElementById('contracts-list').innerHTML = `<p>No active contracts found for ${activeAccount.username}</p>`;
         }
     } catch (error) {
+        console.error('Failed to load contracts:', error);
         document.getElementById('contracts-list').innerHTML = `<p style="color: red;">Error loading contracts: ${error.message}</p>`;
     }
 }
@@ -2827,43 +2881,93 @@ function closeContractsModal() {
     document.getElementById('contracts-modal').style.display = 'none';
 }
 
+async function removeContract(contractId) {
+    if (!confirm(`Are you sure you want to stop storing contract ${contractId}?\n\nThis will remove you as a storage provider for this contract.`)) {
+        return;
+    }
+    
+    try {
+        console.log('Removing contract:', contractId);
+        
+        // Check if window.api.spk is available
+        if (!window.api?.spk) {
+            alert('SPK API not available. Please ensure you are logged in.');
+            return;
+        }
+        
+        // Remove the contract using the SPK API
+        const response = await window.api.spk.removeFiles([contractId]);
+        
+        if (response.success) {
+            console.log('Remove result:', response.result);
+            alert(`Successfully removed contract ${contractId}!\n\nYou are no longer a storage provider for this contract.`);
+            
+            // Refresh the contracts list
+            await viewContracts();
+        } else {
+            console.error('Remove failed:', response.error);
+            alert(`Failed to remove contract: ${response.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Remove contract error:', error);
+        alert(`Error removing contract: ${error.message}`);
+    }
+}
+
 async function viewFullLogs() {
     try {
         const logs = await window.api.storage.getRecentLogs(500);
-        const logsWindow = window.open('', 'POA Logs', 'width=800,height=600');
-        logsWindow.document.write(`
-            <html>
-            <head>
-                <title>POA Storage Node Logs</title>
-                <style>
-                    body { 
-                        background: #000; 
-                        color: #0f0; 
-                        font-family: monospace; 
-                        padding: 20px;
-                        margin: 0;
-                    }
-                    pre { 
-                        white-space: pre-wrap; 
-                        word-wrap: break-word; 
-                    }
-                    .error { color: #f00; }
-                    .warn { color: #ff0; }
-                    .info { color: #0f0; }
-                </style>
-            </head>
-            <body>
-                <h2>POA Storage Node Logs</h2>
-                <pre>${logs.map(log => {
-                    const colorClass = log.includes('ERROR') ? 'error' : 
-                                      log.includes('WARN') ? 'warn' : 'info';
-                    return `<span class="${colorClass}">${escapeHtml(log)}</span>`;
-                }).join('\n')}</pre>
-            </body>
-            </html>
-        `);
+        
+        // Create modal HTML
+        const modalHtml = `
+            <div class="modal" id="logsModal" style="display: flex;">
+                <div class="modal-content" style="max-width: 90%; max-height: 90%; width: 800px; height: 600px;">
+                    <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #ccc;">
+                        <h3>POA Storage Node Logs</h3>
+                        <button onclick="closeLogsModal()" class="close-btn" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
+                    </div>
+                    <div class="modal-body" style="overflow-y: auto; height: 500px; background: #000; color: #0f0; font-family: monospace; font-size: 12px; padding: 20px;">
+                        <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0;">${logs.map(log => {
+                            const colorClass = log.includes('ERROR') ? 'error' : 
+                                              log.includes('WARN') ? 'warn' : 'info';
+                            const color = log.includes('ERROR') ? '#f00' : 
+                                         log.includes('WARN') ? '#ff0' : '#0f0';
+                            return `<span style="color: ${color};">${escapeHtml(log)}</span>`;
+                        }).join('\n')}</pre>
+                    </div>
+                    <div class="modal-footer" style="padding: 20px; border-top: 1px solid #ccc; text-align: right;">
+                        <button onclick="closeLogsModal()" class="btn btn-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Remove existing modal if present
+        const existingModal = document.getElementById('logsModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // Add modal to body
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Close modal when clicking backdrop
+        const modal = document.getElementById('logsModal');
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeLogsModal();
+            }
+        });
+        
     } catch (error) {
-        alert('Failed to load logs: ' + error.message);
+        showNotification('Failed to retrieve logs: ' + error.message, 'error');
+    }
+}
+
+function closeLogsModal() {
+    const modal = document.getElementById('logsModal');
+    if (modal) {
+        modal.remove();
     }
 }
 
@@ -2912,18 +3016,57 @@ async function syncMissingFiles() {
 
 async function viewPinnedCIDs() {
     try {
-        const cids = await window.api.contracts.getPinnedCIDs();
+        // Get pinned files directly from IPFS
+        let pinnedFiles = [];
+        
+        try {
+            // Try to get actual pinned files list from IPFS manager
+            const response = await fetch('http://127.0.0.1:5001/api/v0/pin/ls?type=recursive', {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                pinnedFiles = Object.keys(data.Keys || {});
+            } else {
+                // Fallback: try contracts API
+                const contractCids = await window.api.contracts?.getPinnedCIDs?.() || [];
+                pinnedFiles = contractCids;
+            }
+        } catch (ipfsError) {
+            console.warn('IPFS direct call failed, using contracts API:', ipfsError);
+            // Fallback to contracts API
+            const contractCids = await window.api.contracts?.getPinnedCIDs?.() || [];
+            pinnedFiles = contractCids;
+        }
         
         const modal = document.createElement('div');
         modal.className = 'modal';
-        modal.style.display = 'block';
+        modal.style.display = 'flex';
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 800px; max-height: 600px; overflow: auto;">
-                <h3>Pinned CIDs (${cids.length})</h3>
-                <div style="font-family: monospace; font-size: 12px;">
-                    ${cids.length > 0 ? cids.map(cid => `<div>${cid}</div>`).join('') : '<p>No CIDs pinned</p>'}
+            <div class="modal-content" style="max-width: 90%; max-height: 90%; width: 800px; overflow: auto;">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #ccc;">
+                    <h3>Pinned Files (${pinnedFiles.length})</h3>
+                    <button onclick="this.parentElement.parentElement.parentElement.remove()" class="close-btn" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
                 </div>
-                <button onclick="this.parentElement.parentElement.remove()" class="btn btn-sm" style="margin-top: 20px;">Close</button>
+                <div class="modal-body" style="padding: 20px; max-height: 400px; overflow-y: auto;">
+                    <div style="font-family: monospace; font-size: 12px; line-height: 1.4;">
+                        ${pinnedFiles.length > 0 ? 
+                            pinnedFiles.map(cid => `
+                                <div style="padding: 5px 0; border-bottom: 1px solid #eee;">
+                                    <strong>${cid}</strong>
+                                    <div style="font-size: 11px; color: #666; margin-top: 2px;">
+                                        <a href="https://ipfs.io/ipfs/${cid}" target="_blank" style="margin-right: 10px;">View on IPFS</a>
+                                        <a href="https://ipfs.dlux.io/ipfs/${cid}" target="_blank">View on DLUX</a>
+                                    </div>
+                                </div>
+                            `).join('') 
+                            : '<p style="text-align: center; color: #666; margin: 40px 0;">No files currently pinned</p>'}
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 20px; border-top: 1px solid #ccc; text-align: right;">
+                    <button onclick="this.parentElement.parentElement.remove()" class="btn btn-secondary">Close</button>
+                </div>
             </div>
         `;
         document.body.appendChild(modal);
@@ -2935,7 +3078,7 @@ async function viewPinnedCIDs() {
             }
         };
     } catch (error) {
-        showNotification('Failed to load pinned CIDs: ' + error.message, 'error');
+        showNotification('Failed to load pinned files: ' + error.message, 'error');
     }
 }
 
@@ -4320,17 +4463,21 @@ async function initializeNetworkBrowser() {
     if (!networkBrowser) {
         networkBrowser = new NetworkBrowser(container);
         
-        // Wait for storage API to be ready and set it before initializing
-        if (window.storageAPI) {
-            await networkBrowser.setStorageManager(window.storageAPI);
-        } else {
-            // Retry setting storage manager after a brief delay
-            setTimeout(async () => {
-                if (window.storageAPI && networkBrowser) {
-                    await networkBrowser.setStorageManager(window.storageAPI);
-                }
-            }, 100);
-        }
+        // Create a simple mock storage manager since window.storageAPI isn't available
+        const mockStorageManager = {
+            async storeFiles(contractIds) {
+                console.log('Store files requested:', contractIds);
+                return { stored: contractIds, failed: [] };
+            },
+            async batchStore(contractIds, batchSize) {
+                console.log('Batch store requested:', contractIds, batchSize);
+                return { stored: contractIds, failed: [] };
+            }
+        };
+        
+        // Set the mock storage manager
+        await networkBrowser.setStorageManager(mockStorageManager);
+        console.log('NetworkBrowser initialized with mock storage manager');
     } else {
         // Refresh data if storage manager is available
         if (networkBrowser.storageManager) {

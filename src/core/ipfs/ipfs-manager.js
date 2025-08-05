@@ -118,7 +118,7 @@ class IPFSManager extends EventEmitter {
   }
 
   /**
-   * Configure IPFS CORS settings
+   * Configure IPFS CORS settings and bootstrap peers
    */
   async configureCORS() {
     const commands = [
@@ -126,7 +126,12 @@ class IPFSManager extends EventEmitter {
       ['config', '--json', 'API.HTTPHeaders.Access-Control-Allow-Methods', '["GET", "POST"]'],
       ['config', '--json', 'API.HTTPHeaders.Access-Control-Allow-Headers', '["Authorization"]'],
       ['config', '--json', 'API.HTTPHeaders.Access-Control-Expose-Headers', '["Location"]'],
-      ['config', '--json', 'API.HTTPHeaders.Access-Control-Allow-Credentials', '["true"]']
+      ['config', '--json', 'API.HTTPHeaders.Access-Control-Allow-Credentials', '["true"]'],
+      // Add default IPFS bootstrap peers for peer connectivity
+      ['bootstrap', 'add', '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN'],
+      ['bootstrap', 'add', '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa'],
+      ['bootstrap', 'add', '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zp5gZkpfsT9i2jGGzCJYGRNL3Bv2aD'],
+      ['bootstrap', 'add', '/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ']
     ];
 
     for (const cmd of commands) {
@@ -136,7 +141,14 @@ class IPFSManager extends EventEmitter {
         });
         proc.on('close', (code) => {
           if (code === 0) resolve();
-          else reject(new Error(`IPFS config failed: ${cmd.join(' ')}`));
+          else {
+            // Bootstrap commands may fail if peer already exists - that's OK
+            if (cmd[0] === 'bootstrap') {
+              resolve(); // Ignore bootstrap failures
+            } else {
+              reject(new Error(`IPFS config failed: ${cmd.join(' ')}`));
+            }
+          }
         });
       });
     }

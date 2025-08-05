@@ -30,9 +30,9 @@ class StorageNodeTab extends EventEmitter {
     // Bind methods
     this.handleRefresh = this.handleRefresh.bind(this);
     this.handleJoinContract = this.handleJoinContract.bind(this);
-    this.handleSearch = this.handleSearch.bind(this);
-    this.handleFilterChange = this.handleFilterChange.bind(this);
-    this.handleSortChange = this.handleSortChange.bind(this);
+    this.handleBatchStore = this.handleBatchStore.bind(this);
+    this.handleContractCheckbox = this.handleContractCheckbox.bind(this);
+    this.selectedContracts = new Set();
     
     // Setup event listeners
     this.setupEventListeners();
@@ -99,34 +99,16 @@ class StorageNodeTab extends EventEmitter {
         <div class="controls-section">
           <button class="refresh-contracts btn-primary" ${this.isLoading ? 'disabled' : ''}>
             <span class="icon">🔄</span>
-            Refresh Contracts
+            Refresh Storage Opportunities
+          </button>
+          <button class="batch-store btn-secondary" disabled>
+            Store Selected (<span class="selected-count">0</span>)
           </button>
           <div class="auto-refresh">
             <label>
               <input type="checkbox" class="auto-refresh-toggle" checked>
               Auto-refresh every 2 minutes
             </label>
-          </div>
-        </div>
-
-        <div class="filters-section">
-          <div class="search-container">
-            <input type="text" class="search-contracts" placeholder="Search by CID or contract ID...">
-          </div>
-          <div class="filter-controls">
-            <select class="size-filter">
-              <option value="all">All sizes</option>
-              <option value="small">Small (&lt; 1MB)</option>
-              <option value="medium">Medium (1MB - 100MB)</option>
-              <option value="large">Large (&gt; 100MB)</option>
-            </select>
-            <select class="sort-contracts">
-              <option value="reward-desc">Highest reward first</option>
-              <option value="reward-asc">Lowest reward first</option>
-              <option value="size-desc">Largest files first</option>
-              <option value="size-asc">Smallest files first</option>
-              <option value="urgent">Most urgent first</option>
-            </select>
           </div>
         </div>
 
@@ -137,14 +119,14 @@ class StorageNodeTab extends EventEmitter {
           </div>
           
           <div class="contracts-stats">
-            <span class="contracts-count">0 contracts available</span>
+            <span class="contracts-count">0 storage opportunities available</span>
             <span class="storage-capacity">Capacity: 0% used</span>
           </div>
 
           <div class="available-contracts">
             <div class="empty-state" style="display: none;">
               <div class="empty-icon">📦</div>
-              <h3>No contracts available</h3>
+              <h3>No storage opportunities available</h3>
               <p>There are currently no understored contracts that need additional storage nodes.</p>
             </div>
           </div>
@@ -281,39 +263,41 @@ class StorageNodeTab extends EventEmitter {
         cursor: not-allowed;
       }
 
-      .filters-section {
+      .batch-store {
         display: flex;
-        gap: 15px;
-        margin-bottom: 20px;
-        padding: 15px;
-        background: white;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
-      }
-
-      .search-container {
-        flex: 1;
-      }
-
-      .search-contracts {
-        width: 100%;
-        padding: 8px 12px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 6px;
+        background: #28a745;
+        color: white;
+        cursor: pointer;
         font-size: 14px;
       }
 
-      .filter-controls {
-        display: flex;
-        gap: 10px;
+      .batch-store:hover:not(:disabled) {
+        background: #218838;
       }
 
-      .filter-controls select {
-        padding: 8px 12px;
-        border: 1px solid #ced4da;
+      .batch-store:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      .btn-secondary {
+        background: #6c757d;
+        color: white;
+        border: none;
+        padding: 8px 16px;
         border-radius: 4px;
+        cursor: pointer;
         font-size: 14px;
-        background: white;
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        background: #5a6268;
       }
 
       .contracts-section {
@@ -365,6 +349,9 @@ class StorageNodeTab extends EventEmitter {
         padding: 20px;
         border-bottom: 1px solid #e9ecef;
         transition: background-color 0.2s;
+        display: flex;
+        align-items: flex-start;
+        gap: 15px;
       }
 
       .contract-item:hover {
@@ -373,6 +360,15 @@ class StorageNodeTab extends EventEmitter {
 
       .contract-item.urgent {
         border-left: 4px solid #dc3545;
+      }
+
+      .contract-checkbox {
+        margin-top: 8px;
+        transform: scale(1.2);
+      }
+
+      .contract-content {
+        flex: 1;
       }
 
       .contract-header {
@@ -536,6 +532,10 @@ class StorageNodeTab extends EventEmitter {
     const refreshBtn = this.container.querySelector('.refresh-contracts');
     refreshBtn.addEventListener('click', this.handleRefresh);
     
+    // Batch store button
+    const batchStoreBtn = this.container.querySelector('.batch-store');
+    batchStoreBtn.addEventListener('click', this.handleBatchStore);
+    
     // Auto-refresh toggle
     const autoRefreshToggle = this.container.querySelector('.auto-refresh-toggle');
     autoRefreshToggle.addEventListener('change', (e) => {
@@ -545,17 +545,6 @@ class StorageNodeTab extends EventEmitter {
         this.stopAutoRefresh();
       }
     });
-    
-    // Search input
-    const searchInput = this.container.querySelector('.search-contracts');
-    searchInput.addEventListener('input', this.handleSearch);
-    
-    // Filter controls
-    const sizeFilter = this.container.querySelector('.size-filter');
-    sizeFilter.addEventListener('change', this.handleFilterChange);
-    
-    const sortSelect = this.container.querySelector('.sort-contracts');
-    sortSelect.addEventListener('change', this.handleSortChange);
   }
 
   /**
@@ -566,25 +555,59 @@ class StorageNodeTab extends EventEmitter {
   }
 
   /**
-   * Handle search input
+   * Handle batch store button click
    */
-  handleSearch(event) {
-    const query = event.target.value.toLowerCase();
-    this.filterAndDisplayContracts(query);
+  async handleBatchStore() {
+    if (this.selectedContracts.size === 0) {
+      return;
+    }
+    
+    const contractIds = Array.from(this.selectedContracts);
+    const confirmed = window.confirm(
+      `Store ${contractIds.length} selected contracts?\n\n` +
+      `This will start pinning all selected files to your IPFS node.`
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+    
+    for (const contractId of contractIds) {
+      const contract = this.contracts.find(c => c.id === contractId);
+      if (contract) {
+        await this.handleJoinContract(contract, false); // false = don't show individual confirmations
+      }
+    }
+    
+    // Clear selections and refresh
+    this.selectedContracts.clear();
+    this.updateBatchStoreButton();
+    setTimeout(() => {
+      this.refreshContracts();
+    }, 1000);
   }
 
   /**
-   * Handle filter changes
+   * Handle contract checkbox changes
    */
-  handleFilterChange() {
-    this.filterAndDisplayContracts();
+  handleContractCheckbox(contractId, checked) {
+    if (checked) {
+      this.selectedContracts.add(contractId);
+    } else {
+      this.selectedContracts.delete(contractId);
+    }
+    this.updateBatchStoreButton();
   }
 
   /**
-   * Handle sort changes
+   * Update batch store button state
    */
-  handleSortChange() {
-    this.sortAndDisplayContracts();
+  updateBatchStoreButton() {
+    const batchBtn = this.container.querySelector('.batch-store');
+    const countSpan = batchBtn.querySelector('.selected-count');
+    
+    countSpan.textContent = this.selectedContracts.size;
+    batchBtn.disabled = this.selectedContracts.size === 0;
   }
 
   /**
@@ -660,7 +683,7 @@ class StorageNodeTab extends EventEmitter {
     try {
       const allContracts = await this.fetchUnderstoredContracts();
       this.contracts = this.filterAvailableContracts(allContracts);
-      this.filterAndDisplayContracts();
+      this.displayContracts(this.contracts);
       
       this.updateContractsStats();
     } catch (error) {
@@ -672,70 +695,6 @@ class StorageNodeTab extends EventEmitter {
     }
   }
 
-  /**
-   * Filter and display contracts based on current filters
-   */
-  filterAndDisplayContracts(searchQuery = null) {
-    let filtered = [...this.contracts];
-    
-    // Apply search filter
-    const search = searchQuery !== null 
-      ? searchQuery 
-      : this.container.querySelector('.search-contracts').value.toLowerCase();
-    
-    if (search) {
-      filtered = filtered.filter(contract => 
-        contract.id.toLowerCase().includes(search) ||
-        contract.cid.toLowerCase().includes(search)
-      );
-    }
-    
-    // Apply size filter
-    const sizeFilter = this.container.querySelector('.size-filter').value;
-    if (sizeFilter !== 'all') {
-      filtered = filtered.filter(contract => {
-        const size = contract.size || 0;
-        switch (sizeFilter) {
-          case 'small': return size < 1024 * 1024; // < 1MB
-          case 'medium': return size >= 1024 * 1024 && size <= 100 * 1024 * 1024; // 1MB-100MB
-          case 'large': return size > 100 * 1024 * 1024; // > 100MB
-          default: return true;
-        }
-      });
-    }
-    
-    this.filteredContracts = filtered;
-    this.sortAndDisplayContracts();
-  }
-
-  /**
-   * Sort and display contracts
-   */
-  sortAndDisplayContracts() {
-    const sortBy = this.container.querySelector('.sort-contracts').value;
-    
-    const sorted = [...this.filteredContracts].sort((a, b) => {
-      switch (sortBy) {
-        case 'reward-desc':
-          return (b.reward || 0) - (a.reward || 0);
-        case 'reward-asc':
-          return (a.reward || 0) - (b.reward || 0);
-        case 'size-desc':
-          return (b.size || 0) - (a.size || 0);
-        case 'size-asc':
-          return (a.size || 0) - (b.size || 0);
-        case 'urgent':
-          // Most urgent = fewest current nodes relative to required
-          const urgencyA = (a.requiredNodes || 3) - (a.currentNodes || 0);
-          const urgencyB = (b.requiredNodes || 3) - (b.currentNodes || 0);
-          return urgencyB - urgencyA;
-        default:
-          return 0;
-      }
-    });
-    
-    this.displayContracts(sorted);
-  }
 
   /**
    * Display contracts in the UI
@@ -781,24 +740,27 @@ class StorageNodeTab extends EventEmitter {
     const storageNodeRunning = this.config.storageNode && this.config.storageNode.running;
     
     element.innerHTML = `
-      <div class="contract-header">
-        <div class="contract-info-primary">
-          <div class="contract-id">${contract.id}</div>
-          <div class="contract-cid">${contract.cid}</div>
+      <input type="checkbox" class="contract-checkbox" data-contract-id="${contract.id}">
+      <div class="contract-content">
+        <div class="contract-header">
+          <div class="contract-info-primary">
+            <div class="contract-id">${contract.id}</div>
+            <div class="contract-cid">${contract.cid}</div>
+          </div>
+          <div class="contract-actions">
+            <button class="expand-contract">Details</button>
+            <button class="join-contract" ${!storageNodeRunning ? 'disabled' : ''}>
+              Store
+            </button>
+          </div>
         </div>
-        <div class="contract-actions">
-          <button class="expand-contract">Details</button>
-          <button class="join-contract" ${!storageNodeRunning ? 'disabled' : ''}>
-            Join Contract
-          </button>
+        
+        <div class="contract-info">
+          <span>Size: ${this.formatFileSize(contract.size || 0)}</span>
+          <span>Nodes: ${contract.currentNodes || 0}/${contract.requiredNodes || 3}</span>
+          <span>Reward: ${contract.reward || 0} BROCA</span>
+          <span>Duration: ${contract.duration || 30} days</span>
         </div>
-      </div>
-      
-      <div class="contract-info">
-        <span>Size: ${this.formatFileSize(contract.size || 0)}</span>
-        <span>Nodes: ${contract.currentNodes || 0}/${contract.requiredNodes || 3}</span>
-        <span>Reward: ${contract.reward || 0} BROCA</span>
-        <span>Duration: ${contract.duration || 30} days</span>
       </div>
       
       <div class="contract-details">
@@ -842,9 +804,14 @@ class StorageNodeTab extends EventEmitter {
     `;
     
     // Setup event handlers for this contract
+    const checkbox = element.querySelector('.contract-checkbox');
     const expandBtn = element.querySelector('.expand-contract');
     const joinBtn = element.querySelector('.join-contract');
     const details = element.querySelector('.contract-details');
+    
+    checkbox.addEventListener('change', (e) => {
+      this.handleContractCheckbox(contract.id, e.target.checked);
+    });
     
     expandBtn.addEventListener('click', () => {
       const isExpanded = details.classList.contains('expanded');
@@ -862,25 +829,27 @@ class StorageNodeTab extends EventEmitter {
   /**
    * Handle joining a contract
    */
-  async handleJoinContract(contract) {
+  async handleJoinContract(contract, showConfirmation = true) {
     if (!this.config.storageNode || !this.config.storageNode.running) {
       this.showNotification('Storage node must be running to join contracts', 'error');
       return;
     }
     
-    // Show confirmation dialog
-    const confirmed = window.confirm(
-      `Join storage contract?\n\n` +
-      `Contract: ${contract.id}\n` +
-      `File: ${contract.cid}\n` +
-      `Size: ${this.formatFileSize(contract.size || 0)}\n` +
-      `Reward: ${contract.reward || 0} BROCA\n` +
-      `Duration: ${contract.duration || 30} days\n\n` +
-      `This will start pinning the file to your IPFS node.`
-    );
-    
-    if (!confirmed) {
-      return;
+    // Show confirmation dialog if requested
+    if (showConfirmation) {
+      const confirmed = window.confirm(
+        `Store this contract?\n\n` +
+        `Contract: ${contract.id}\n` +
+        `File: ${contract.cid}\n` +
+        `Size: ${this.formatFileSize(contract.size || 0)}\n` +
+        `Reward: ${contract.reward || 0} BROCA\n` +
+        `Duration: ${contract.duration || 30} days\n\n` +
+        `This will start pinning the file to your IPFS node.`
+      );
+      
+      if (!confirmed) {
+        return;
+      }
     }
     
     try {
@@ -903,7 +872,7 @@ class StorageNodeTab extends EventEmitter {
       const result = await response.json();
       
       if (result.success) {
-        this.showNotification(`Successfully joined contract ${contract.id}`, 'success');
+        this.showNotification(`Successfully started storing contract ${contract.id}`, 'success');
         
         // Trigger file sync to start pinning
         if (this.config.fileSyncService && this.config.fileSyncService.isRunning()) {
@@ -980,7 +949,7 @@ class StorageNodeTab extends EventEmitter {
     const statsElement = this.container.querySelector('.contracts-stats');
     const countElement = statsElement.querySelector('.contracts-count');
     
-    countElement.textContent = `${this.contracts.length} contracts available`;
+    countElement.textContent = `${this.contracts.length} storage opportunities available`;
     
     // TODO: Add storage capacity display when IPFS manager provides stats
   }

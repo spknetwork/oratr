@@ -5,7 +5,7 @@
  * while delegating all SPK network operations to the core library.
  */
 
-const SPK = require('@disregardfiat/spk-js').default;
+const { default: SPK } = require('@disregardfiat/spk-js');
 const { ipcMain } = require('electron');
 const { EventEmitter } = require('events');
 const logger = require('../../utils/logger');
@@ -72,15 +72,23 @@ class SPKClientWrapper extends EventEmitter {
       return this.spkInstances.get(username);
     }
 
+    console.log('🔍 [SPKWrapper] Creating new SPK instance for:', username);
+
     // Get account from desktop account manager
     const account = await this.accountManager.getAccount(username);
     if (!account) {
       throw new Error(`Account ${username} not found`);
     }
 
+    console.log('🔍 [SPKWrapper] Account found:', !!account);
+
     // Create keychain adapter for this SPK instance
     const SPKKeychainAdapter = require('./keychain-adapter');
     const keychainAdapter = new SPKKeychainAdapter(this.accountManager);
+    
+    console.log('🔍 [SPKWrapper] Keychain adapter created:', !!keychainAdapter);
+    console.log('🔍 [SPKWrapper] SPK constructor type:', typeof SPK);
+    console.log('🔍 [SPKWrapper] SPK constructor name:', SPK.name);
     
     // Create SPK instance with desktop-specific configuration
     const spk = new SPK(username, {
@@ -91,11 +99,15 @@ class SPKClientWrapper extends EventEmitter {
       maxRetries: 3
     });
 
+    console.log('🔍 [SPKWrapper] SPK instance created:', !!spk);
+
     // Initialize the SPK instance
     try {
       await spk.init();
+      console.log('🔍 [SPKWrapper] SPK instance initialized successfully');
       logger.info(`SPK instance initialized for ${username}`);
     } catch (error) {
+      console.error('🚨 [SPKWrapper] SPK initialization error:', error);
       logger.warn(`SPK initialization failed for ${username}:`, error.message);
       // Continue anyway - some features may still work
     }
@@ -243,7 +255,7 @@ class SPKClientWrapper extends EventEmitter {
    * Create metadata for direct upload
    */
   createDirectUploadMetadata(fileCount, tags = []) {
-    const SPK = require('@disregardfiat/spk-js').default;
+    const { default: SPK } = require('@disregardfiat/spk-js');
     return SPK.createDirectUploadMetadata(fileCount, tags);
   }
 
@@ -323,6 +335,102 @@ class SPKClientWrapper extends EventEmitter {
     const spk = await this.getSpkInstance(this.currentUser);
     // Use the storage service registration method, not blockchain node registration
     return spk.registerStorageService(ipfsId, domain, price);
+  }
+
+  /**
+   * Store files as a storage provider
+   */
+  async storeFiles(contractIds) {
+    if (!this.currentUser) {
+      throw new Error('No current user set');
+    }
+
+    console.log('🔍 [SPKWrapper] storeFiles called with:', contractIds);
+    console.log('🔍 [SPKWrapper] Current user:', this.currentUser);
+    
+    const spk = await this.getSpkInstance(this.currentUser);
+    console.log('🔍 [SPKWrapper] SPK instance obtained:', !!spk);
+    console.log('🔍 [SPKWrapper] SPK constructor name:', spk.constructor.name);
+    console.log('🔍 [SPKWrapper] SPK has storeFiles method:', typeof spk.storeFiles);
+    console.log('🔍 [SPKWrapper] SPK has nodeOps:', !!spk.nodeOps);
+    console.log('🔍 [SPKWrapper] nodeOps has storeFiles:', spk.nodeOps ? typeof spk.nodeOps.storeFiles : 'no nodeOps');
+    console.log('🔍 [SPKWrapper] SPK available methods:', Object.getOwnPropertyNames(spk).filter(name => typeof spk[name] === 'function').slice(0, 20));
+    console.log('🔍 [SPKWrapper] SPK prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(spk)).filter(name => typeof spk[name] === 'function').slice(0, 20));
+    
+    if (typeof spk.storeFiles !== 'function') {
+      console.error('🚨 [SPKWrapper] storeFiles method not found on SPK instance');
+      console.error('🚨 [SPKWrapper] Available methods:', Object.getOwnPropertyNames(spk).filter(name => typeof spk[name] === 'function'));
+      throw new Error('storeFiles method not available on SPK instance');
+    }
+    
+    return spk.storeFiles(contractIds, false); // Skip contract validation for now
+  }
+
+  /**
+   * Remove files from storage (stop being a provider)
+   */
+  async removeFiles(contractIds) {
+    if (!this.currentUser) {
+      throw new Error('No current user set');
+    }
+
+    console.log('🔍 [SPKWrapper] removeFiles called with:', contractIds);
+    console.log('🔍 [SPKWrapper] Current user:', this.currentUser);
+    
+    const spk = await this.getSpkInstance(this.currentUser);
+    console.log('🔍 [SPKWrapper] SPK has removeFiles method:', typeof spk.removeFiles);
+    
+    if (typeof spk.removeFiles !== 'function') {
+      console.error('🚨 [SPKWrapper] removeFiles method not found on SPK instance');
+      throw new Error('removeFiles method not available on SPK instance');
+    }
+    
+    return spk.removeFiles(contractIds, false); // Skip contract validation for now
+  }
+
+  /**
+   * Batch store multiple contracts
+   */
+  async batchStore(contractIds, chunkSize = 40) {
+    if (!this.currentUser) {
+      throw new Error('No current user set');
+    }
+
+    console.log('🔍 [SPKWrapper] batchStore called with:', contractIds.length, 'contracts, chunkSize:', chunkSize);
+    
+    const spk = await this.getSpkInstance(this.currentUser);
+    console.log('🔍 [SPKWrapper] SPK has batchStore method:', typeof spk.batchStore);
+    
+    if (typeof spk.batchStore !== 'function') {
+      console.error('🚨 [SPKWrapper] batchStore method not found on SPK instance');
+      throw new Error('batchStore method not available on SPK instance');
+    }
+    
+    return spk.batchStore(contractIds, chunkSize, false); // Skip contract validation for now
+  }
+
+  /**
+   * Get available contracts to store
+   */
+  async getAvailableContracts(limit = 50) {
+    if (!this.currentUser) {
+      throw new Error('No current user set');
+    }
+
+    const spk = await this.getSpkInstance(this.currentUser);
+    return spk.getAvailableContracts(limit);
+  }
+
+  /**
+   * Get contracts being stored by this node
+   */
+  async getStoredContracts() {
+    if (!this.currentUser) {
+      throw new Error('No current user set');
+    }
+
+    const spk = await this.getSpkInstance(this.currentUser);
+    return spk.getStoredContracts();
   }
 
   /**
