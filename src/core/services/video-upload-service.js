@@ -189,6 +189,15 @@ class VideoUploadService extends EventEmitter {
       
       const masterHash = await this.ipfsManager.hashOnly(Buffer.from(masterPlaylist));
       
+      // Add thumbnail to allHashes if it exists
+      if (thumbnail) {
+        allHashes['thumbnail.jpg'] = { 
+          hash: thumbnail.cid, 
+          content: thumbnail.buffer,
+          path: null // Thumbnail is generated, not from a file
+        };
+      }
+      
       // Stage 5: Upload to IPFS
       this.emit('progress', { 
         uploadId, 
@@ -204,7 +213,7 @@ class VideoUploadService extends EventEmitter {
       
       // Upload all files
       let uploadedCount = 0;
-      const totalFiles = Object.keys(allHashes).length + 2; // +2 for master and thumbnail
+      const totalFiles = Object.keys(allHashes).length + 1; // +1 for master playlist
       
       // Upload segments and playlists
       for (const [filename, fileData] of Object.entries(allHashes)) {
@@ -239,12 +248,6 @@ class VideoUploadService extends EventEmitter {
       // Upload master playlist
       await this.ipfsManager.addFile(Buffer.from(masterPlaylist), 'master.m3u8');
       uploadedCount++;
-      
-      // Upload thumbnail
-      if (thumbnail) {
-        await this.ipfsManager.addFile(thumbnail.buffer, 'thumbnail.jpg');
-        uploadedCount++;
-      }
       
       // Stage 6: Create storage contract
       this.emit('progress', { 
@@ -578,7 +581,7 @@ class VideoUploadService extends EventEmitter {
   async cleanup() {
     for (const tempPath of this.tempFiles) {
       try {
-        await fs.rmdir(tempPath, { recursive: true });
+        await fs.rm(tempPath, { recursive: true, force: true });
       } catch (error) {
         // Ignore cleanup errors
       }
