@@ -15,10 +15,15 @@ class NetworkBrowser {
     }
     
     async init() {
-        const activeAccount = await window.api.account.getActive()
-        if (activeAccount) {
-            this.username = activeAccount.username;
+        try {
+            const poaConfig = await window.api.poa.getConfig();
+            if (poaConfig && poaConfig.account) {
+                this.username = poaConfig.account;
+            }
+        } catch (e) {
+            console.error('Could not get poa config', e);
         }
+
         this.render();
         this.attachEventListeners();
         // Only load data if storageManager is available
@@ -104,7 +109,7 @@ class NetworkBrowser {
         });
     }
 
-    switchView(view) {
+    async switchView(view) {
         this.currentView = view;
         this.selectedContracts.clear();
         this.updateSelectionUI();
@@ -118,6 +123,10 @@ class NetworkBrowser {
         const removeBtn = document.getElementById('remove-selected-btn');
 
         if(view === 'stored') {
+            const poaConfig = await window.api.poa.getConfig();
+            if (poaConfig && poaConfig.account) {
+                this.username = poaConfig.account;
+            }
             storeBtn.style.display = 'none';
             removeBtn.style.display = 'inline-block';
         } else {
@@ -169,7 +178,7 @@ class NetworkBrowser {
     async loadStoredFiles() {
         this.showLoading();
         if (!this.username) {
-            this.showError('Username not found. Please make sure you are logged in.');
+            this.showError('PoA username not found. Please make sure your storage node is configured and running.');
             return;
         }
 

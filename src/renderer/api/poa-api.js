@@ -113,6 +113,18 @@ class POAApi {
       throw error;
     }
   }
+
+  async getConfig() {
+    if (!ipcRenderer) {
+        return { error: 'IPC not available' };
+    }
+    try {
+        return await ipcRenderer.invoke('poa:get-config');
+    } catch (error) {
+        console.error('Failed to get POA config:', error);
+        throw error;
+    }
+  }
   
   /**
    * Get POA logs

@@ -23,7 +23,8 @@ class StorageNodeTab extends EventEmitter {
     
     this.container = this.config.container;
     this.contracts = [];
-    this.filteredContracts = [];
+    this.currentView = 'opportunities';
+    this.username = '';
     this.refreshTimer = null;
     this.isLoading = false;
     
@@ -79,7 +80,12 @@ class StorageNodeTab extends EventEmitter {
   /**
    * Render the storage node tab UI
    */
-  render() {
+  async render() {
+    const poaConfig = await window.api.poa.getConfig();
+    if (poaConfig && poaConfig.account) {
+        this.username = poaConfig.account;
+    }
+
     this.container.innerHTML = `
       <div class="storage-node-tab">
         <header class="tab-header">
@@ -95,14 +101,24 @@ class StorageNodeTab extends EventEmitter {
             </div>
           </div>
         </header>
-
+        <div class="view-tabs">
+            <button class="view-tab active" data-view="opportunities">
+                Storage Opportunities
+            </button>
+            <button class="view-tab" data-view="stored">
+                My Stored Files
+            </button>
+        </div>
         <div class="controls-section">
           <button class="refresh-contracts btn-primary" ${this.isLoading ? 'disabled' : ''}>
             <span class="icon">🔄</span>
-            Refresh Storage Opportunities
+            Refresh
           </button>
           <button class="batch-store btn-secondary" disabled>
             Store Selected (<span class="selected-count">0</span>)
+          </button>
+          <button class="batch-remove btn-danger" disabled style="display: none;">
+            Remove Selected (<span class="selected-count-remove">0</span>)
           </button>
           <div class="auto-refresh">
             <label>
@@ -119,15 +135,15 @@ class StorageNodeTab extends EventEmitter {
           </div>
           
           <div class="contracts-stats">
-            <span class="contracts-count">0 storage opportunities available</span>
+            <span class="contracts-count">0 contracts</span>
             <span class="storage-capacity">Capacity: 0% used</span>
           </div>
 
           <div class="available-contracts">
             <div class="empty-state" style="display: none;">
               <div class="empty-icon">📦</div>
-              <h3>No storage opportunities available</h3>
-              <p>There are currently no understored contracts that need additional storage nodes.</p>
+              <h3>No contracts available</h3>
+              <p>There are currently no contracts to display.</p>
             </div>
           </div>
         </div>
@@ -263,24 +279,35 @@ class StorageNodeTab extends EventEmitter {
         cursor: not-allowed;
       }
 
-      .batch-store {
+      .batch-store, .batch-remove {
         display: flex;
         align-items: center;
         gap: 8px;
         padding: 10px 16px;
         border: none;
         border-radius: 6px;
-        background: #28a745;
         color: white;
         cursor: pointer;
         font-size: 14px;
+      }
+
+      .batch-store {
+        background: #28a745;
+      }
+
+      .batch-remove {
+        background: #dc3545;
       }
 
       .batch-store:hover:not(:disabled) {
         background: #218838;
       }
 
-      .batch-store:disabled {
+      .batch-remove:hover:not(:disabled) {
+          background: #c82333;
+      }
+
+      .batch-store:disabled, .batch-remove:disabled {
         background: #6c757d;
         cursor: not-allowed;
         opacity: 0.6;
@@ -528,6 +555,11 @@ class StorageNodeTab extends EventEmitter {
    * Setup event handlers for UI interactions
    */
   setupEventHandlers() {
+    this.container.querySelectorAll('.view-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            this.switchView(e.target.dataset.view);
+        });
+    });
     // Refresh button
     const refreshBtn = this.container.querySelector('.refresh-contracts');
     refreshBtn.addEventListener('click', this.handleRefresh);
@@ -546,6 +578,30 @@ class StorageNodeTab extends EventEmitter {
       }
     });
   }
+
+  switchView(view) {
+    this.currentView = view;
+    this.selectedContracts.clear();
+    this.updateBatchStoreButton();
+    
+    // Update tabs
+    this.container.querySelectorAll('.view-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.view === view);
+    });
+
+    const storeBtn = this.container.querySelector('.batch-store');
+    const removeBtn = this.container.querySelector('.batch-remove');
+
+    if(view === 'stored') {
+        storeBtn.style.display = 'none';
+        removeBtn.style.display = 'inline-block';
+    } else {
+        storeBtn.style.display = 'inline-block';
+        removeBtn.style.display = 'none';
+    }
+
+    this.refreshContracts();
+}
 
   /**
    * Handle refresh button click
@@ -608,6 +664,11 @@ class StorageNodeTab extends EventEmitter {
     
     countSpan.textContent = this.selectedContracts.size;
     batchBtn.disabled = this.selectedContracts.size === 0;
+
+    const removeBtn = this.container.querySelector('.batch-remove');
+    const removeCountSpan = removeBtn.querySelector('.selected-count-remove');
+    removeCountSpan.textContent = this.selectedContracts.size;
+    removeBtn.disabled = this.selectedContracts.size === 0;
   }
 
   /**
@@ -652,6 +713,26 @@ class StorageNodeTab extends EventEmitter {
     }
   }
 
+  async fetchStoredContracts() {
+      if(!this.username) {
+          this.showNotification('POA username not set', 'error');
+          return [];
+      }
+      const url = `${this.config.spkApiUrl}/api/spk/contracts/stored-by/${this.username}`;
+      try {
+          const response = await fetch(url);
+          if(!response.ok) {
+              throw new Error(`API returned ${response.status}: ${response.statusText}`);
+          }
+          const data = await response.json();
+          return data.contracts || [];
+      } catch (error) {
+          console.error('Failed to fetch stored contracts:', error);
+          this.showNotification(`Failed to fetch stored contracts: ${error.message}`, 'error');
+          return [];
+      }
+  }
+
   /**
    * Filter out contracts already stored by current node
    */
@@ -681,8 +762,14 @@ class StorageNodeTab extends EventEmitter {
     this.showLoading(true);
     
     try {
-      const allContracts = await this.fetchUnderstoredContracts();
-      this.contracts = this.filterAvailableContracts(allContracts);
+      let contracts = [];
+      if(this.currentView === 'opportunities') {
+        const allContracts = await this.fetchUnderstoredContracts();
+        contracts = this.filterAvailableContracts(allContracts);
+      } else {
+        contracts = await this.fetchStoredContracts();
+      }
+      this.contracts = contracts;
       this.displayContracts(this.contracts);
       
       this.updateContractsStats();
@@ -749,9 +836,14 @@ class StorageNodeTab extends EventEmitter {
           </div>
           <div class="contract-actions">
             <button class="expand-contract">Details</button>
-            <button class="join-contract" ${!storageNodeRunning ? 'disabled' : ''}>
+            ${this.currentView === 'opportunities' ?
+            `<button class="join-contract" ${!storageNodeRunning ? 'disabled' : ''}>
               Store
-            </button>
+            </button>`:
+            `<button class="remove-contract btn-danger" ${!storageNodeRunning ? 'disabled' : ''}>
+                Remove
+            </button>`
+            }
           </div>
         </div>
         
@@ -807,6 +899,7 @@ class StorageNodeTab extends EventEmitter {
     const checkbox = element.querySelector('.contract-checkbox');
     const expandBtn = element.querySelector('.expand-contract');
     const joinBtn = element.querySelector('.join-contract');
+    const removeBtn = element.querySelector('.remove-contract');
     const details = element.querySelector('.contract-details');
     
     checkbox.addEventListener('change', (e) => {
@@ -819,9 +912,17 @@ class StorageNodeTab extends EventEmitter {
       expandBtn.textContent = isExpanded ? 'Details' : 'Hide';
     });
     
-    joinBtn.addEventListener('click', () => {
-      this.handleJoinContract(contract);
-    });
+    if(joinBtn) {
+        joinBtn.addEventListener('click', () => {
+            this.handleJoinContract(contract);
+        });
+    }
+
+    if(removeBtn) {
+        removeBtn.addEventListener('click', () => {
+            this.handleRemoveContract(contract);
+        });
+    }
     
     return element;
   }
@@ -854,24 +955,9 @@ class StorageNodeTab extends EventEmitter {
     
     try {
       // Call API to join contract
-      const response = await fetch(`${this.config.spkApiUrl}/api/spk/contracts/join`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          contractId: contract.id,
-          storageNode: this.config.storageNode.config.account
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to join contract: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success) {
+      const response = await window.api.spk.storeFiles([contract.id]);
+
+      if (response.success) {
         this.showNotification(`Successfully started storing contract ${contract.id}`, 'success');
         
         // Trigger file sync to start pinning
@@ -890,6 +976,25 @@ class StorageNodeTab extends EventEmitter {
       console.error('Failed to join contract:', error);
       this.showNotification(`Failed to join contract: ${error.message}`, 'error');
     }
+  }
+
+  async handleRemoveContract(contract) {
+      if(!confirm('Are you sure you want to remove this contract?')) return;
+
+      try {
+        const response = await window.api.spk.removeFiles([contract.id]);
+        if(response.success) {
+            this.showNotification(`Successfully removed contract ${contract.id}`, 'success');
+            setTimeout(() => {
+                this.refreshContracts();
+            }, 1000)
+        } else {
+            throw new Error(response.error || 'Unknown error occurred');
+        }
+      } catch (error) {
+          console.error('Failed to remove contract', error);
+          this.showNotification(`Failed to remove contract: ${error.message}`, 'error');
+      }
   }
 
   /**
@@ -949,7 +1054,7 @@ class StorageNodeTab extends EventEmitter {
     const statsElement = this.container.querySelector('.contracts-stats');
     const countElement = statsElement.querySelector('.contracts-count');
     
-    countElement.textContent = `${this.contracts.length} storage opportunities available`;
+    countElement.textContent = `${this.contracts.length} contracts available`;
     
     // TODO: Add storage capacity display when IPFS manager provides stats
   }

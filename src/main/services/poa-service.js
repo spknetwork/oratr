@@ -49,6 +49,10 @@ class POAService {
     ipcMain.handle('poa:update-config', async (event, config) => {
       return this.updateConfig(config);
     });
+
+    ipcMain.handle('poa:get-config', async () => {
+        return this.manager ? this.manager.config : await this.loadConfig();
+    });
     
     // Get logs
     ipcMain.handle('poa:get-logs', async (event, limit) => {
