@@ -1,5 +1,7 @@
 const { EventEmitter } = require('events');
 const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static-electron');
+const ffprobePath = require('ffprobe-static-electron');
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
@@ -12,8 +14,10 @@ const { v4: uuidv4 } = require('uuid');
 class Transcoder extends EventEmitter {
   constructor(config = {}) {
     super();
-    this.ffmpegPath = config.ffmpegPath || 'ffmpeg';
-    this.ffprobePath = config.ffprobePath || 'ffprobe';
+    // Use bundled ffmpeg binary from ffmpeg-static-electron
+    this.ffmpegPath = config.ffmpegPath || ffmpegPath.path;
+    // Use bundled ffprobe binary from ffprobe-static-electron
+    this.ffprobePath = config.ffprobePath || ffprobePath.path;
     this.tempDir = config.tempDir || path.join(os.tmpdir(), 'spk-transcode');
     this.activeJobs = new Map();
     this.isAvailable = null;
@@ -45,7 +49,8 @@ class Transcoder extends EventEmitter {
   async getFFmpegVersion() {
     return new Promise((resolve, reject) => {
       const { exec } = require('child_process');
-      exec('ffmpeg -version', (error, stdout, stderr) => {
+      // Use the bundled ffmpeg path
+      exec(`"${this.ffmpegPath}" -version`, (error, stdout, stderr) => {
         if (error) {
           reject(error);
           return;
@@ -406,7 +411,7 @@ class Transcoder extends EventEmitter {
 
     // Clean up temp directory
     try {
-      await fs.rmdir(this.tempDir, { recursive: true });
+      await fs.rm(this.tempDir, { recursive: true, force: true });
     } catch (error) {
       // Ignore cleanup errors
     }

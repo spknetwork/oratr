@@ -9,11 +9,16 @@ class NetworkBrowser {
         this.currentView = 'opportunities'; // opportunities, search, recent
         this.selectedContracts = new Set();
         this.currentFiles = [];
+        this.username = '';
         
         this.init();
     }
     
     async init() {
+        const activeAccount = await window.api.account.getActive()
+        if (activeAccount) {
+            this.username = activeAccount.username;
+        }
         this.render();
         this.attachEventListeners();
         // Only load data if storageManager is available
@@ -33,6 +38,9 @@ class NetworkBrowser {
                         <button class="view-tab active" data-view="opportunities">
                             Storage Opportunities
                         </button>
+                        <button class="view-tab" data-view="stored">
+                            My Stored Files
+                        </button>
                     </div>
                 </div>
 
@@ -47,6 +55,10 @@ class NetworkBrowser {
                         <button class="btn btn-primary" onclick="window.networkBrowser.storeSelected()" 
                                 id="store-selected-btn" disabled>
                             Store Selected (<span id="selected-count">0</span>)
+                        </button>
+                        <button class="btn btn-danger" onclick="window.networkBrowser.removeSelected()"
+                                id="remove-selected-btn" disabled style="display: none;">
+                            Remove Selected (<span id="selected-count-remove">0</span>)
                         </button>
                     </div>
                 </div>
@@ -85,7 +97,35 @@ class NetworkBrowser {
     }
     
     attachEventListeners() {
-        // No event listeners needed for this simplified view.
+        this.container.querySelectorAll('.view-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                this.switchView(e.target.dataset.view);
+            });
+        });
+    }
+
+    switchView(view) {
+        this.currentView = view;
+        this.selectedContracts.clear();
+        this.updateSelectionUI();
+        
+        // Update tabs
+        this.container.querySelectorAll('.view-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.view === view);
+        });
+
+        const storeBtn = document.getElementById('store-selected-btn');
+        const removeBtn = document.getElementById('remove-selected-btn');
+
+        if(view === 'stored') {
+            storeBtn.style.display = 'none';
+            removeBtn.style.display = 'inline-block';
+        } else {
+            storeBtn.style.display = 'inline-block';
+            removeBtn.style.display = 'none';
+        }
+
+        this.refresh();
     }
     
     async setStorageManager(manager) {
@@ -97,7 +137,11 @@ class NetworkBrowser {
     async refresh() {
         if (!this.storageManager) return;
         
-        await this.loadOpportunities();
+        if (this.currentView === 'opportunities') {
+            await this.loadOpportunities();
+        } else {
+            await this.loadStoredFiles();
+        }
     }
     
     async loadOpportunities() {
@@ -119,6 +163,30 @@ class NetworkBrowser {
         } catch (error) {
             console.error('Failed to load opportunities:', error);
             this.showError('Failed to load storage opportunities: ' + error.message);
+        }
+    }
+
+    async loadStoredFiles() {
+        this.showLoading();
+        if (!this.username) {
+            this.showError('Username not found. Please make sure you are logged in.');
+            return;
+        }
+
+        try {
+            const response = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${this.username}`);
+            if(!response.ok) {
+                throw new Error(`API returned ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const storedFiles = data.contracts || data || [];
+            console.log('Loaded stored files:', storedFiles);
+
+            this.renderFiles(storedFiles);
+        } catch (error) {
+            console.error('Failed to load stored files:', error);
+            this.showError('Failed to load stored files: ' + error.message);
         }
     }
     
@@ -158,10 +226,16 @@ class NetworkBrowser {
                     </div>
                     
                     <div class="contract-actions">
-                        <button class="btn btn-sm btn-primary store-btn" 
+                        ${this.currentView === 'opportunities' ? 
+                            `<button class="btn btn-sm btn-primary store-btn" 
                                 onclick="window.networkBrowser.storeContract('${file.id || file.cid}')">
-                            Store
-                        </button>
+                                Store
+                            </button>` : 
+                            `<button class="btn btn-sm btn-danger remove-btn"
+                                onclick="window.networkBrowser.removeContract('${file.id || file.cid}')">
+                                Remove
+                            </button>`
+                        }
                     </div>
                 </div>
             `;
@@ -209,6 +283,8 @@ class NetworkBrowser {
         const count = this.selectedContracts.size;
         document.getElementById('selected-count').textContent = count;
         document.getElementById('store-selected-btn').disabled = count === 0;
+        document.getElementById('selected-count-remove').textContent = count;
+        document.getElementById('remove-selected-btn').disabled = count === 0;
 
         // Update stats
         let selectedSize = 0;
@@ -274,8 +350,35 @@ class NetworkBrowser {
             alert(`Failed to store contracts: ${error.message}`);
         }
     }
+
+    async removeSelected() {
+        if(this.selectedContracts.size === 0) return;
+        if (!confirm(`Are you sure you want to remove ${this.selectedContracts.size} contracts?`)) return;
+
+        const contractIds = Array.from(this.selectedContracts);
+        try {
+            if (!window.api?.spk) {
+                alert('SPK API not available. Please ensure you are logged in.');
+                return;
+            }
+
+            const response = await window.api.spk.removeFiles(contractIds);
+            if (response.success) {
+                alert('Successfully removed selected contracts');
+                this.currentFiles = this.currentFiles.filter(file => !contractIds.includes(file.id || file.cid));
+                this.selectedContracts.clear();
+                this.renderFiles(this.currentFiles);
+                this.updateSelectionUI();
+            } else {
+                throw new Error(response.error || 'Batch remove operation failed');
+            }
+        } catch (error) {
+            console.error('Failed to remove contracts:', error);
+            alert(`Failed to remove contracts: ${error.message}`);
+        }
+    }
     
-    async storeFile(contractId) {
+    async storeContract(contractId) {
         if (!confirm('Store this contract?')) return;
         
         try {
@@ -285,6 +388,22 @@ class NetworkBrowser {
         } catch (error) {
             console.error('Failed to store contract:', error);
             alert(`Failed to store contract: ${error.message}`);
+        }
+    }
+
+    async removeContract(contractId) {
+        if(!confirm('Are you sure you want to remove this contract?')) return;
+        try {
+            const response = await window.api.spk.removeFiles([contractId]);
+            if(response.success) {
+                alert('Contract removed successfully');
+                await this.refresh();
+            } else {
+                throw new Error(response.error || 'Remove operation failed')
+            }
+        } catch (error) {
+            console.error('Failed to remove contract:', error);
+            alert(`Failed to remove contract: ${error.message}`);
         }
     }
     
@@ -395,6 +514,21 @@ class NetworkBrowser {
             .store-btn:disabled {
                 background: #6c757d;
                 cursor: not-allowed;
+            }
+
+            .remove-btn {
+                background: #dc3545;
+                color: white;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                font-weight: 500;
+            }
+
+            .remove-btn:hover {
+                background: #c82333;
             }
             
             .no-files {

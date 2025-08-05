@@ -48,11 +48,13 @@
     "dmg-license": "^1.0.11"
   },
   "dependencies": {
-    "@disregardfiat/spk-js": "file:../spk-js",
+    "@disregardfiat/spk-js": "^1.0.0",
     "@hiveio/hive-js": "^2.0.8",
     "axios": "^1.6.5",
     "chokidar": "^3.5.3",
     "electron-store": "^8.1.0",
+    "ffmpeg-static-electron": "^2.0.3",
+    "ffprobe-static-electron": "^2.0.2",
     "fluent-ffmpeg": "^2.1.2",
     "form-data": "^4.0.0",
     "hive-tx": "^4.0.6",
