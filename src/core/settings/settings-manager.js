@@ -11,7 +11,7 @@ const os = require('os');
 class SettingsManager extends EventEmitter {
   constructor() {
     super();
-    this.settingsFile = path.join(os.homedir(), '.spk-desktop', 'settings.json');
+    this.settingsFile = path.join(os.homedir(), '.oratr', 'settings.json');
     this.settings = this.getDefaultSettings();
     this.initialized = false;
   }
@@ -27,8 +27,11 @@ class SettingsManager extends EventEmitter {
       ipfsMode: 'internal', // 'internal' or 'external'
       ipfsHost: '127.0.0.1',
       ipfsPort: 5001,
-      ipfsDataPath: path.join(os.homedir(), '.spk-desktop', 'ipfs'),
+      ipfsDataPath: path.join(os.homedir(), '.oratr', 'ipfs'),
       maxStorageGB: 100,
+      
+      // POA Settings
+      poaDataPath: path.join(os.homedir(), '.oratr', 'poa'),
       
       // Upload Settings
       defaultUploadMethod: 'direct', // 'direct' or 'standard'
@@ -47,6 +50,7 @@ class SettingsManager extends EventEmitter {
       storageNodeDomain: '', // Optional domain for gateway services
       storageBidRate: 500,
       autoStartStorage: false,
+      storageNodeWasRunning: false, // Track if storage node was running before shutdown
       
       // Privacy Settings
       shareUsageStats: false,
@@ -103,6 +107,24 @@ class SettingsManager extends EventEmitter {
     }
   }
 
+  /**
+   * Get all settings
+   * @returns {Object} All settings
+   */
+  getSettings() {
+    return { ...this.settings };
+  }
+  
+  /**
+   * Update multiple settings at once
+   * @param {Object} updates - Object with settings to update
+   */
+  async updateSettings(updates) {
+    Object.assign(this.settings, updates);
+    await this.saveSettings();
+    return this.settings;
+  }
+  
   /**
    * Get a setting value
    * @param {string} key - Setting key (supports dot notation like 'network.spkNode')

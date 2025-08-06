@@ -1,9 +1,9 @@
-// Debug helper for SPK Desktop
+// Debug helper for Oratr
 // Add this to the console to check global state
 
 window.debugSPK = {
     checkAccount: function() {
-        console.log('=== SPK Desktop Debug Info ===');
+        console.log('=== Oratr Debug Info ===');
         console.log('window.currentAccount:', window.currentAccount);
         console.log('isAuthenticated:', window.isAuthenticated);
         console.log('refreshFiles exists:', typeof window.refreshFiles === 'function');

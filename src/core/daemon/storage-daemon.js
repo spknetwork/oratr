@@ -13,7 +13,7 @@ const os = require('os');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
-const configPath = args[0] || path.join(os.homedir(), '.spk-desktop', 'storage-config.json');
+const configPath = args[0] || path.join(os.homedir(), '.oratr', 'storage-config.json');
 
 async function startDaemon() {
   console.log('Starting Storage Node daemon...');

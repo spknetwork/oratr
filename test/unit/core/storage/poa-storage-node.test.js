@@ -1,11 +1,53 @@
 const POAStorageNode = require('../../../../src/core/storage/poa-storage-node');
 const EventEmitter = require('events');
+const { spawn } = require('child_process');
+const fs = require('fs').promises;
 
-describe.skip('POAStorageNode', () => { // TODO: Fix account configuration and mock external services
+// Mock the binary module
+jest.mock('../../../../src/core/binaries/proofofaccess-binary', () => ({
+  path: '/mock/path/to/proofofaccess',
+  isAvailable: jest.fn().mockResolvedValue(true),
+  ensureBinary: jest.fn().mockResolvedValue('/mock/path/to/proofofaccess'),
+  getBinaryPath: jest.fn().mockReturnValue('/mock/path/to/proofofaccess'),
+  getBinaryName: jest.fn().mockReturnValue('proofofaccess')
+}));
+
+// Mock child_process spawn
+jest.mock('child_process', () => ({
+  spawn: jest.fn()
+}));
+
+// Mock fs.promises
+jest.mock('fs', () => ({
+  promises: {
+    access: jest.fn(),
+    mkdir: jest.fn(),
+    readFile: jest.fn(),
+    writeFile: jest.fn(),
+    unlink: jest.fn(),
+    stat: jest.fn()
+  }
+}));
+
+describe('POAStorageNode', () => {
   let storageNode;
+  let mockProcess;
 
   beforeEach(() => {
+    jest.clearAllMocks();
+    
+    // Mock spawn process
+    mockProcess = {
+      stdout: { on: jest.fn() },
+      stderr: { on: jest.fn() },
+      on: jest.fn(),
+      kill: jest.fn(),
+      pid: 12345
+    };
+    spawn.mockReturnValue(mockProcess);
+    
     storageNode = new POAStorageNode({
+      account: 'test-account',
       nodeId: 'test-node-123',
       storagePath: '/tmp/poa-storage-test'
     });
@@ -22,24 +64,56 @@ describe.skip('POAStorageNode', () => { // TODO: Fix account configuration and m
       expect(storageNode).toBeInstanceOf(EventEmitter);
     });
 
-    test('should start storage node', async () => {
-      await storageNode.start();
-      expect(storageNode.isRunning()).toBe(true);
+    test('should use bundled binary by default', () => {
+      const poaBinary = require('../../../../src/core/binaries/proofofaccess-binary');
+      expect(storageNode.config.binaryPath).toBe(poaBinary.path);
     });
 
-    test('should stop storage node', async () => {
-      await storageNode.start();
-      await storageNode.stop();
-      expect(storageNode.isRunning()).toBe(false);
+    test('should allow custom binary path', () => {
+      const customNode = new POAStorageNode({
+        account: 'test-account',
+        binaryPath: '/custom/path/to/poa'
+      });
+      expect(customNode.config.binaryPath).toBe('/custom/path/to/poa');
     });
 
-    test('should load configuration', async () => {
-      const config = await storageNode.loadConfiguration();
+    test('should ensure binary before starting', async () => {
+      const poaBinary = require('../../../../src/core/binaries/proofofaccess-binary');
       
-      expect(config).toHaveProperty('nodeId');
-      expect(config).toHaveProperty('storagePath');
-      expect(config).toHaveProperty('maxStorage');
-      expect(config).toHaveProperty('validatorEndpoints');
+      // Mock successful IPFS check
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ Pubsub: { Enabled: true } })
+      });
+      
+      // Mock process events to simulate successful start
+      mockProcess.on.mockImplementation((event, callback) => {
+        if (event === 'spawn') callback();
+      });
+      
+      await storageNode.start();
+      
+      expect(poaBinary.ensureBinary).toHaveBeenCalled();
+      expect(spawn).toHaveBeenCalled();
+    });
+
+    test('should fail to start if binary not available', async () => {
+      const poaBinary = require('../../../../src/core/binaries/proofofaccess-binary');
+      poaBinary.isAvailable.mockResolvedValue(false);
+      poaBinary.ensureBinary.mockResolvedValue(false);
+      
+      await expect(storageNode.start()).rejects.toThrow(
+        'POA binary not available and could not be downloaded'
+      );
+    });
+
+    test('should check binary availability', async () => {
+      const poaBinary = require('../../../../src/core/binaries/proofofaccess-binary');
+      
+      const available = await storageNode.checkBinary();
+      
+      expect(poaBinary.isAvailable).toHaveBeenCalled();
+      expect(available).toBe(true);
     });
   });
 

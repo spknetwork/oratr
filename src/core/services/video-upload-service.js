@@ -547,7 +547,7 @@ class VideoUploadService extends EventEmitter {
     // Also save to disk for persistence
     const statePath = path.join(
       process.env.HOME || process.env.USERPROFILE,
-      '.spk-desktop',
+      '.oratr',
       'upload-state.json'
     );
     

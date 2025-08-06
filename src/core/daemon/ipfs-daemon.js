@@ -12,7 +12,7 @@ const os = require('os');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
-const configPath = args[0] || path.join(os.homedir(), '.spk-desktop', 'ipfs-config.json');
+const configPath = args[0] || path.join(os.homedir(), '.oratr', 'ipfs-config.json');
 
 async function startDaemon() {
   console.log('Starting IPFS daemon...');

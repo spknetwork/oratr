@@ -5,7 +5,7 @@ const VideoUploadService = require('../core/services/video-upload-service');
 const { ipcMain } = require('electron');
 
 /**
- * Setup integrated storage system for SPK Desktop
+ * Setup integrated storage system for Oratr
  * This enables users to earn rewards by running IPFS + PoA nodes
  */
 class StorageSetup {
@@ -44,21 +44,13 @@ class StorageSetup {
       this.poaNode = new POAStorageNode({
         account: activeAccount.username,
         dataPath: config.poaDataPath,
-        binaryPath: config.poaBinaryPath,
         nodeType: 2, // Storage node
         ipfsPort: this.ipfsManager.config.port,
         ipfsHost: this.ipfsManager.config.host,
         maxStorage: config.maxStorage || 100 * 1024 * 1024 * 1024 // 100GB
       });
       
-      // Check if PoA binary exists
-      const binaryExists = await this.poaNode.checkBinary();
-      if (!binaryExists) {
-        console.log('PoA binary not found, installing...');
-        await this.poaNode.installPOA();
-      }
-      
-      // Start PoA node
+      // Start PoA node (binary is provided by NPM package)
       await this.poaNode.start();
       console.log('PoA node started');
       

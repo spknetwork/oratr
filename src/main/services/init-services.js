@@ -117,7 +117,7 @@ async function initializeServices() {
   // Initialize account manager
   const accountManager = new AccountManager({
     storagePath: path.join(appDataPath, 'accounts'),
-    appName: 'SPK Desktop'
+    appName: 'Oratr'
   });
 
   // Initialize IPFS manager

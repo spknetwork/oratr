@@ -14,11 +14,11 @@ class POAProcessManager extends EventEmitter {
     
     this.config = {
       // POA binary location
-      binaryPath: config.binaryPath || path.join(os.homedir(), '.spk-desktop', 'poa', 'proofofaccess'),
+      binaryPath: config.binaryPath || path.join(os.homedir(), '.oratr', 'poa', 'proofofaccess'),
       
       // POA configuration
-      dataPath: config.dataPath || path.join(os.homedir(), '.spk-desktop', 'poa-data'),
-      configPath: config.configPath || path.join(os.homedir(), '.spk-desktop', 'poa-config.json'),
+      dataPath: config.dataPath || path.join(os.homedir(), '.oratr', 'poa-data'),
+      configPath: config.configPath || path.join(os.homedir(), '.oratr', 'poa-config.json'),
       
       // Process options
       detached: config.detached !== false, // Spawn detached by default

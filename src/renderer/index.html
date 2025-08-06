@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPK Desktop</title>
+    <title>Oratr</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
     <!-- Main App -->
     <div id="app" style="display: none;">
         <header>
-            <h1>SPK Desktop</h1>
+            <h1>Oratr</h1>
             <div class="account-info">
                 <span id="account-name">No account</span>
                 <div id="account-balance" class="balance-mini"></div>
@@ -28,8 +28,8 @@
                 <button class="tab" onclick="showTab('upload')">Video Upload</button>
                 <button class="tab" onclick="showTab('balance')">Wallet</button>
                 <button class="tab" onclick="showTab('storage')" id="storage-tab-button">
-                    Storage Node
                     <span class="status-indicator"></span>
+                    Storage Node
                 </button>
             </div>
 
@@ -179,14 +179,10 @@
                         </div>
                         <div class="step" data-step="2">
                             <div class="step-number">2</div>
-                            <div class="step-label">POA</div>
+                            <div class="step-label">Registration</div>
                         </div>
                         <div class="step" data-step="3">
                             <div class="step-number">3</div>
-                            <div class="step-label">Registration</div>
-                        </div>
-                        <div class="step" data-step="4">
-                            <div class="step-number">4</div>
                             <div class="step-label">Status</div>
                         </div>
                     </div>
@@ -198,7 +194,7 @@
                             <div class="config-options">
                                 <label>
                                     <input type="radio" name="ipfs-mode" value="internal" checked onchange="updateIPFSMode(this.value)">
-                                    Internal Node (Managed by SPK Desktop)
+                                    Internal Node (Managed by Oratr)
                                 </label>
                                 <label>
                                     <input type="radio" name="ipfs-mode" value="external" onchange="updateIPFSMode(this.value)">
@@ -274,28 +270,15 @@
                                 <div class="actions">
                                     <button onclick="runIPFSGC()" class="btn btn-sm">Run Garbage Collection</button>
                                     <button onclick="refreshIPFSInfo()" class="btn btn-sm">Refresh</button>
-                                    <button onclick="nextStep(2)" class="btn btn-primary">Next: POA Setup</button>
+                                    <button onclick="nextStep(2)" class="btn btn-primary">Next: Registration</button>
                                 </div>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Step 2: POA Installation -->
+                    <!-- Step 2: Registration -->
                     <div id="step-2" class="wizard-step">
-                        <h3>Step 2: POA Installation</h3>
-                        <div id="poa-status" class="status-item">
-                            <p>POA Binary: <span id="poa-binary-status">Checking...</span></p>
-                            <button id="install-poa-btn" onclick="installPOA()" style="display: none;" class="btn btn-primary">Install POA</button>
-                        </div>
-                        <div class="step-actions">
-                            <button onclick="prevStep(1)" class="btn btn-secondary">Previous</button>
-                            <button onclick="nextStep(3)" id="poa-next-btn" class="btn btn-primary" disabled>Next: Registration</button>
-                        </div>
-                    </div>
-                    
-                    <!-- Step 3: Registration -->
-                    <div id="step-3" class="wizard-step">
-                        <h3>Step 3: SPK Network Registration</h3>
+                        <h3>Step 2: SPK Network Registration</h3>
                         <div id="registration-status" class="status-item">
                             <p>Registration: <span id="spk-registration-status">Not checked</span></p>
                             <button onclick="checkRegistration()" class="btn btn-sm">Check Status</button>
@@ -319,21 +302,36 @@
                         </div>
                         
                         <div class="step-actions">
-                            <button onclick="prevStep(2)" class="btn btn-secondary">Previous</button>
-                            <button onclick="nextStep(4)" id="registration-next-btn" class="btn btn-primary" disabled>Next: Status Monitor</button>
+                            <button onclick="prevStep(1)" class="btn btn-secondary">Previous</button>
+                            <button onclick="nextStep(3)" id="registration-next-btn" class="btn btn-primary" disabled>Next: Status Monitor</button>
                         </div>
                     </div>
                     
-                    <!-- Step 4: Status Monitoring -->
-                    <div id="step-4" class="wizard-step">
-                        <h3>Step 4: Status Monitoring</h3>
+                    <!-- Step 3: Status Monitoring -->
+                    <div id="step-3" class="wizard-step">
+                        <h3>Step 3: Status Monitoring</h3>
                         <div class="setup-complete">
                             <p>✅ Your storage node is ready to start!</p>
                             <div class="final-actions">
                                 <button onclick="startStorageNode()" class="btn btn-primary btn-large">Start Storage Node</button>
-                                <button onclick="prevStep(3)" class="btn btn-secondary">Previous</button>
+                                <button onclick="prevStep(2)" class="btn btn-secondary">Previous</button>
                             </div>
                         </div>
+                    </div>
+                </div>
+                
+                <!-- Storage Node Starting Overlay -->
+                <div id="storage-starting-overlay" class="storage-starting-overlay" style="display: none;">
+                    <div class="starting-content">
+                        <div class="spinner-large"></div>
+                        <h3>Starting Storage Node...</h3>
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div id="storage-start-progress" class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <div id="storage-start-status" class="status-text">Initializing...</div>
+                        </div>
+                        <div id="storage-start-logs" class="startup-logs"></div>
                     </div>
                 </div>
                 

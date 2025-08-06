@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 
 // Core modules
@@ -18,6 +18,7 @@ const PendingUploadsManager = require('../core/services/pending-uploads-manager'
 const SPKClientWrapper = require('../core/spk/spk-client-wrapper');
 
 let mainWindow;
+let tray;
 let services = {};
 
 /**
@@ -38,8 +39,178 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
+  // Window is ready - no need to check storage here as auto-start will handle it
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('Main window finished loading');
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Hide to tray instead of closing
+  mainWindow.on('close', (event) => {
+    if (!app.isQuiting) {
+      event.preventDefault();
+      mainWindow.hide();
+      
+      // Show notification on first minimize to tray
+      if (!global.hasShownTrayNotification) {
+        // You could add a native notification here if desired
+        global.hasShownTrayNotification = true;
+      }
+    }
+  });
+}
+
+/**
+ * Update tray icon with storage node status overlay
+ */
+function updateTrayIcon(storageRunning = false) {
+  if (!tray) return;
+  
+  // Use appropriate tray icon based on platform and status
+  let trayIconPath;
+  
+  if (process.platform === 'darwin') {
+    // macOS uses template icons for better theme integration
+    trayIconPath = storageRunning 
+      ? path.join(__dirname, '../../resources/images/icons/tray/32x32.png')  // Use larger icon when active
+      : path.join(__dirname, '../../resources/images/icons/tray/16x16.png');
+  } else if (process.platform === 'win32') {
+    // Windows uses ICO format
+    trayIconPath = path.join(__dirname, '../../resources/images/icons/tray/icon.ico');
+  } else {
+    // Linux uses PNG - use different size to indicate status
+    trayIconPath = storageRunning 
+      ? path.join(__dirname, '../../resources/images/icons/tray/32x32.png')  // Use larger icon when active
+      : path.join(__dirname, '../../resources/images/icons/tray/16x16.png');
+  }
+
+  const trayIcon = nativeImage.createFromPath(trayIconPath);
+  
+  // For macOS and Linux, use template mode for theme adaptation
+  if (process.platform !== 'win32') {
+    trayIcon.setTemplateImage(true);
+  }
+  
+  tray.setImage(trayIcon);
+  
+  // Update tooltip to reflect status
+  const tooltip = storageRunning 
+    ? 'Oratr - SPK Network Desktop Application (Storage Node Running)'
+    : 'Oratr - SPK Network Desktop Application';
+  tray.setToolTip(tooltip);
+}
+
+/**
+ * Create system tray
+ */
+function createTray() {
+  // Create initial tray with default icon
+  const trayIconPath = process.platform === 'win32' 
+    ? path.join(__dirname, '../../resources/images/icons/tray/icon.ico')
+    : path.join(__dirname, '../../resources/images/icons/tray/16x16.png');
+    
+  const trayIcon = nativeImage.createFromPath(trayIconPath);
+  
+  if (process.platform !== 'win32') {
+    trayIcon.setTemplateImage(true);
+  }
+  
+  tray = new Tray(trayIcon);
+  
+  // Set initial state (storage node not running)
+  updateTrayIcon(false);
+  
+  // Create context menu
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Oratr',
+      click: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        } else {
+          createWindow();
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Storage Node',
+      submenu: [
+        {
+          label: 'Start Storage Node',
+          click: async () => {
+            // Trigger storage node start
+            if (services.storageNode) {
+              try {
+                await services.storageNode.start();
+              } catch (error) {
+                console.error('Failed to start storage node from tray:', error);
+              }
+            }
+          }
+        },
+        {
+          label: 'Stop Storage Node',
+          click: async () => {
+            // Trigger storage node stop
+            if (services.storageNode) {
+              await services.storageNode.stop();
+            }
+          }
+        }
+      ]
+    },
+    {
+      label: 'IPFS Node',
+      submenu: [
+        {
+          label: 'Start IPFS',
+          click: async () => {
+            if (services.ipfsManager) {
+              try {
+                await services.ipfsManager.start();
+              } catch (error) {
+                console.error('Failed to start IPFS from tray:', error);
+              }
+            }
+          }
+        },
+        {
+          label: 'Stop IPFS', 
+          click: async () => {
+            if (services.ipfsManager) {
+              await services.ipfsManager.stop();
+            }
+          }
+        }
+      ]
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Oratr',
+      click: () => {
+        app.isQuiting = true;
+        app.quit();
+      }
+    }
+  ]);
+  
+  tray.setContextMenu(contextMenu);
+  
+  // Double click to show window
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    } else {
+      createWindow();
+    }
   });
 }
 
@@ -202,67 +373,7 @@ async function checkPendingUploadsOnStartup() {
   }
 }
 
-/**
- * Setup service event handlers
- */
-function setupServiceHandlers() {
-  // POA Storage Node events
-  services.storageNode.on('log', (log) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('storage:log', log);
-    }
-  });
-
-  services.storageNode.on('validation', (data) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('storage:validation', data);
-    }
-  });
-
-  services.storageNode.on('contract-registered', (data) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('storage:contract', data);
-    }
-  });
-
-  services.storageNode.on('update-available', (data) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('storage:update-available', data);
-    }
-  });
-
-  // Contract monitor events
-  services.contractMonitor.on('log', (log) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('contracts:log', log);
-    }
-  });
-
-  services.contractMonitor.on('cid-pinned', (data) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('contracts:cid-pinned', data);
-    }
-  });
-
-  services.contractMonitor.on('cid-unpinned', (data) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('contracts:cid-unpinned', data);
-    }
-  });
-
-  services.contractMonitor.on('check-complete', (data) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('contracts:check-complete', data);
-    }
-  });
-
-  // Video upload progress
-  services.videoUploadService.on('progress', (progress) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('upload:progress', progress);
-    }
-  });
-}
+// Service event handlers moved to the main setupServiceHandlers function below to avoid duplication
 
 /**
  * Setup IPC handlers
@@ -712,19 +823,36 @@ function setupIPCHandlers() {
       services.storageNode.config.ipfsPort = ipfsConfig.port || 5001;
       services.storageNode.config.ipfsHost = ipfsConfig.host || '127.0.0.1';
       
-      await services.storageNode.start();
+      const startResult = await services.storageNode.start();
       
-      // Start contract monitoring when storage node starts
-      try {
-        services.contractMonitor.config.username = account.username;
-        services.contractMonitor.config.spkApiUrl = services.spkClient.config?.spkNode || 'https://spktest.dlux.io';
-        await services.contractMonitor.start();
-      } catch (monitorError) {
-        console.error('Failed to start contract monitor:', monitorError);
-        // Don't fail storage start if monitor fails
+      // If it returns an object with success: true, we're good
+      if (startResult && startResult.success) {
+        // Start contract monitoring when storage node starts (if not already running)
+        if (!startResult.alreadyRunning) {
+          try {
+            services.contractMonitor.config.username = account.username;
+            services.contractMonitor.config.spkApiUrl = services.spkClient.config?.spkNode || 'https://spktest.dlux.io';
+            await services.contractMonitor.start();
+          } catch (monitorError) {
+            console.error('Failed to start contract monitor:', monitorError);
+            // Don't fail storage start if monitor fails
+          }
+        }
+        
+        // Save state that storage node is running for auto-start
+        const settings = await services.settingsManager.getSettings();
+        settings.storageNodeWasRunning = true;
+        await services.settingsManager.updateSettings(settings);
+        console.log('Storage node state saved as running for auto-start');
+        
+        return { success: true };
+      } else {
+        // If start() didn't return an object, assume success (backwards compatibility)
+        const settings = await services.settingsManager.getSettings();
+        settings.storageNodeWasRunning = true;
+        await services.settingsManager.updateSettings(settings);
+        return { success: true };
       }
-      
-      return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -736,6 +864,11 @@ function setupIPCHandlers() {
     
     // Stop contract monitoring when storage node stops
     services.contractMonitor.stop();
+    
+    // Save state that storage node is stopped
+    const settings = await services.settingsManager.getSettings();
+    settings.storageNodeWasRunning = false;
+    await services.settingsManager.updateSettings(settings);
     
     return { success: true };
   });
@@ -782,38 +915,24 @@ function setupIPCHandlers() {
       return actualStatus;
     }
     
-    // If not running, but we have fast status indicating it should be, 
-    // this means we need to actually start it
-    console.log('[DEBUG] Checking if storage node manager exists and has getFastStatus');
-    if (services.storageNodeManager && services.storageNodeManager.getFastStatus) {
-      try {
-        console.log('[DEBUG] Getting fast status...');
-        const fastStatus = await services.storageNodeManager.getFastStatus();
-        console.log('[DEBUG] Fast status result:', fastStatus);
-        if (fastStatus.quickCheck && fastStatus.registered && fastStatus.ipfsRunning) {
-          console.log('[DEBUG] Conditions met for shouldAutoStart - returning shouldAutoStart: true');
-          // The node should be running but isn't - indicate it's available to start
-          return { 
-            running: false,
-            registered: fastStatus.registered,
-            ipfsRunning: fastStatus.ipfsRunning,
-            shouldAutoStart: true, // NEW: Indicate this should auto-start
-            message: fastStatus.message,
-            cached: fastStatus.cached,
-            persisted: fastStatus.persisted
-          };
-        } else {
-          console.log('[DEBUG] Fast status conditions not met:', {
-            quickCheck: fastStatus.quickCheck,
-            registered: fastStatus.registered,
-            ipfsRunning: fastStatus.ipfsRunning
-          });
-        }
-      } catch (error) {
-        console.error('Fast status check failed:', error);
-      }
-    } else {
-      console.log('[DEBUG] Storage node manager not available or missing getFastStatus');
+    // Check if storage node was previously registered
+    // We just need to check if the storage node should be running based on saved settings
+    const settings = await services.settingsManager.getSettings();
+    console.log('[DEBUG] Checking storage node settings:', {
+      wasRunning: settings.storageNodeWasRunning,
+      enableStorageNode: settings.enableStorageNode
+    });
+    
+    // If the storage node was running before, indicate it should auto-start
+    if (settings.storageNodeWasRunning) {
+      console.log('[DEBUG] Storage node was previously running, indicating shouldAutoStart');
+      return {
+        running: false,
+        registered: true, // If it was running, it must have been registered
+        ipfsRunning: services.ipfsManager?.running || false,
+        shouldAutoStart: true,
+        message: 'Storage node will auto-start based on previous session'
+      };
     }
     
     // Return actual status
@@ -837,6 +956,76 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.handle('storage:getComprehensiveStatus', async () => {
+    try {
+      // Check POA status
+      const poaStatus = await services.storageNode.getStatus();
+      console.log('[DEBUG] POA Status in comprehensive:', poaStatus);
+      
+      // Check IPFS status
+      const ipfsStatus = {
+        running: services.ipfsManager.running,
+        nodeId: services.ipfsManager.nodeInfo?.id || null
+      };
+      
+      // Get storage stats
+      let storageStats = {};
+      try {
+        storageStats = await services.storageNode.getStorageStats();
+      } catch (e) {
+        console.warn('Failed to get storage stats:', e);
+      }
+      
+      // Check SPK registration
+      let spkRegistered = false;
+      try {
+        // If POA is running, assume it's registered (it wouldn't start otherwise)
+        if (poaStatus.running) {
+          spkRegistered = true;
+        } else {
+          const registration = await services.storageNodeManager.checkNodeStatus();
+          spkRegistered = services.storageNodeManager.isRegistered || false;
+        }
+      } catch (e) {
+        // Not registered or error checking
+        console.warn('Failed to check SPK registration:', e.message);
+      }
+      
+      // Determine if fully operational
+      const isFullyOperational = poaStatus.running && ipfsStatus.running && spkRegistered;
+      
+      return {
+        isFullyOperational,
+        ipfs: ipfsStatus,
+        poa: poaStatus,
+        spk: { registered: spkRegistered },
+        storage: {
+          running: poaStatus.running,
+          used: storageStats.spaceUsed || 0,
+          available: storageStats.spaceAvailable || 1000000000000, // 1TB default
+          filesStored: storageStats.filesStored || 0,
+          maxStorage: storageStats.maxStorage || 1000000000000,
+          stats: poaStatus.stats || {}
+        },
+        node: {
+          contractsStored: storageStats.contractsStored || 0,
+          estimatedMonthlyEarnings: storageStats.estimatedMonthlyEarnings || 0
+        }
+      };
+    } catch (error) {
+      console.error('[DEBUG] getComprehensiveStatus error:', error);
+      return {
+        isFullyOperational: false,
+        ipfs: { running: false },
+        poa: { running: false },
+        spk: { registered: false },
+        storage: { running: false, used: 0, available: 0, filesStored: 0 },
+        node: { contractsStored: 0, estimatedMonthlyEarnings: 0 },
+        error: error.message
+      };
+    }
+  });
+  
   ipcMain.handle('storage:pruneOldLogs', async () => {
     try {
       await services.storageNode.pruneOldLogs();
@@ -1361,6 +1550,12 @@ function setupServiceHandlers() {
   });
 
   // Forward storage node events
+  services.storageNode.on('log', (log) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('storage:log', log);
+    }
+  });
+
   services.storageNode.on('validation', (validation) => {
     if (mainWindow) {
       mainWindow.webContents.send('storage:validation', validation);
@@ -1370,6 +1565,46 @@ function setupServiceHandlers() {
   services.storageNode.on('contract-registered', (contract) => {
     if (mainWindow) {
       mainWindow.webContents.send('storage:contract', contract);
+    }
+  });
+
+  services.storageNode.on('update-available', (updateInfo) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('storage:update-available', updateInfo);
+    }
+  });
+
+  // Update tray icon when storage node starts/stops
+  services.storageNode.on('started', () => {
+    updateTrayIcon(true);
+  });
+
+  services.storageNode.on('stopped', () => {
+    updateTrayIcon(false);
+  });
+
+  // Contract Monitor events
+  services.contractMonitor.on('log', (log) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('contracts:log', log);
+    }
+  });
+
+  services.contractMonitor.on('cid-pinned', (data) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('contracts:cid-pinned', data);
+    }
+  });
+
+  services.contractMonitor.on('cid-unpinned', (data) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('contracts:cid-unpinned', data);
+    }
+  });
+
+  services.contractMonitor.on('check-complete', (data) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('contracts:check-complete', data);
     }
   });
 
@@ -1511,13 +1746,192 @@ function setupServiceHandlers() {
 }
 
 /**
+ * Auto-start storage node if it was running before
+ */
+async function autoStartStorageNode() {
+  try {
+    // Load storage state from settings
+    const settings = await services.settingsManager.getSettings();
+    
+    // Check if auto-start is enabled and storage was previously running
+    if (!settings.storageNodeWasRunning) {
+      console.log('Storage node was not running previously, skipping auto-start');
+      return;
+    }
+    
+    console.log('Auto-starting storage node...');
+    
+    // Start IPFS if it was internal
+    if (settings.ipfsMode === 'internal' && !services.ipfsManager.running) {
+      console.log('Starting internal IPFS...');
+      try {
+        await services.ipfsManager.start();
+      } catch (error) {
+        console.error('Failed to auto-start IPFS:', error);
+        return; // Can't start POA without IPFS
+      }
+    }
+    
+    // Check if we have an active account
+    let activeUsername = await services.spkClient.getActiveAccount();
+    if (!activeUsername) {
+      console.log('No active account found, checking for available accounts...');
+      
+      // Try to get the first available account
+      const accounts = await services.spkClient.accountManager.listAccounts();
+      if (accounts && accounts.length > 0) {
+        activeUsername = accounts[0];
+        console.log(`Setting ${activeUsername} as active account for auto-start`);
+        await services.spkClient.setActiveAccount(activeUsername);
+      } else {
+        console.log('No accounts available, cannot auto-start storage node');
+        return;
+      }
+    }
+    
+    console.log(`Auto-starting storage node for account: ${activeUsername?.username || activeUsername}`);
+    
+    // Get the actual username string
+    const username = activeUsername?.username || activeUsername;
+    
+    // Notify renderer that auto-start is beginning
+    if (mainWindow && mainWindow.webContents) {
+      // Wait for window to be ready if it's not
+      if (mainWindow.webContents.isLoading()) {
+        console.log('[AUTO-START] Window is loading, waiting for did-finish-load');
+        mainWindow.webContents.once('did-finish-load', () => {
+          console.log('[AUTO-START] Window loaded, sending storage:auto-starting event');
+          mainWindow.webContents.send('storage:auto-starting', {
+            account: username
+          });
+        });
+      } else {
+        console.log('[AUTO-START] Window ready, sending storage:auto-starting event immediately');
+        mainWindow.webContents.send('storage:auto-starting', {
+          account: username
+        });
+      }
+    } else {
+      console.log('[AUTO-START] No mainWindow available to send event to');
+    }
+    
+    // Configure and start POA
+    const ipfsConfig = await services.ipfsManager.getConfig();
+    services.storageNode.config.account = username;
+    services.storageNode.config.spkApiUrl = services.spkClient.config?.spkNode || 'https://spktest.dlux.io';
+    services.storageNode.config.ipfsPort = ipfsConfig.port || 5001;
+    services.storageNode.config.ipfsHost = ipfsConfig.host || '127.0.0.1';
+    
+    await services.storageNode.start();
+    console.log('Storage node auto-started successfully');
+    
+    // Update tray icon to show storage node is running
+    updateTrayIcon(true);
+    
+    // Start contract monitor
+    try {
+      services.contractMonitor.config.username = activeUsername;
+      services.contractMonitor.config.spkApiUrl = services.spkClient.config?.spkNode || 'https://spktest.dlux.io';
+      await services.contractMonitor.start();
+      console.log('Contract monitor auto-started successfully');
+    } catch (monitorError) {
+      console.error('Failed to start contract monitor:', monitorError);
+    }
+    
+    // Notify renderer that storage node is now running
+    if (mainWindow && mainWindow.webContents) {
+      // Wait for window to be ready if it's not
+      if (mainWindow.webContents.isLoading()) {
+        console.log('[AUTO-START] Window is loading, waiting to send storage:already-running');
+        mainWindow.webContents.once('did-finish-load', () => {
+          console.log('[AUTO-START] Window loaded, sending storage:already-running event');
+          mainWindow.webContents.send('storage:already-running', {
+            running: true,
+            account: username
+          });
+        });
+      } else {
+        console.log('[AUTO-START] Window ready, sending storage:already-running event immediately');
+        mainWindow.webContents.send('storage:already-running', {
+          running: true,
+          account: username
+        });
+      }
+    } else {
+      console.log('[AUTO-START] No mainWindow available for already-running event');
+    }
+  } catch (error) {
+    console.error('Failed to auto-start storage node:', error);
+  }
+}
+
+/**
+ * Save storage node state before shutdown
+ */
+async function saveStorageNodeState() {
+  try {
+    const settings = await services.settingsManager.getSettings();
+    
+    // Save whether storage node is currently running
+    settings.storageNodeWasRunning = services.storageNode.running || false;
+    
+    // Save the settings
+    await services.settingsManager.updateSettings(settings);
+    console.log('Storage node state saved:', { wasRunning: settings.storageNodeWasRunning });
+  } catch (error) {
+    console.error('Failed to save storage node state:', error);
+  }
+}
+
+/**
  * App event handlers
  */
 app.whenReady().then(async () => {
   try {
     await initializeServices();
     setupIPCHandlers();
+    
+    // Create window and tray immediately for user feedback
     createWindow();
+    createTray();
+    
+    // Check if auto-start should happen and notify renderer immediately
+    const settings = await services.settingsManager.getSettings();
+    if (settings.storageNodeWasRunning) {
+      console.log('Storage node will auto-start based on saved state');
+      // Notify renderer that auto-start is pending
+      // Use setImmediate to ensure window is ready
+      setImmediate(() => {
+        if (mainWindow && mainWindow.webContents) {
+          if (mainWindow.webContents.isLoading()) {
+            console.log('[AUTO-START] Window loading, waiting to send auto-start-pending');
+            mainWindow.webContents.once('did-finish-load', () => {
+              console.log('[AUTO-START] Sending storage:auto-start-pending event');
+              mainWindow.webContents.send('storage:auto-start-pending');
+            });
+          } else {
+            console.log('[AUTO-START] Sending storage:auto-start-pending event immediately');
+            mainWindow.webContents.send('storage:auto-start-pending');
+          }
+        }
+      });
+    }
+    
+    // Auto-start storage node in background (non-blocking)
+    setTimeout(async () => {
+      console.log('Checking for storage node auto-start...');
+      try {
+        await autoStartStorageNode();
+        
+        // Update tray icon if storage node started
+        if (services.storageNode && services.storageNode.running) {
+          updateTrayIcon(true);
+        }
+      } catch (error) {
+        console.error('Auto-start failed:', error);
+      }
+    }, 1000); // Small delay to let UI initialize
+    
   } catch (error) {
     console.error('Failed to initialize app:', error);
     app.quit();
@@ -1525,9 +1939,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Don't quit app when windows are closed - keep running in tray
+  // Users can quit via tray menu or explicitly
 });
 
 app.on('activate', () => {
@@ -1537,6 +1950,9 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', async () => {
+  // Save storage node state before quitting
+  await saveStorageNodeState();
+  
   // Lock accounts on quit
   services.spkClient.lock();
   

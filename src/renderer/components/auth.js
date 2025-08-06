@@ -171,7 +171,7 @@ class AuthComponent {
   showPinSetup() {
     this.container.innerHTML = `
       <div class="auth-container">
-        <h2>Welcome to SPK Desktop</h2>
+        <h2>Welcome to Oratr</h2>
         <p>Create a PIN to secure your accounts</p>
         
         <form id="pin-setup-form">
@@ -209,6 +209,7 @@ class AuthComponent {
       
       if (result.success) {
         self.isUnlocked = true;
+        // PIN setup complete - show account import for first account
         self.showAccountImport();
       } else {
         errorDiv.textContent = result.error || 'Failed to set PIN';
@@ -242,7 +243,7 @@ class AuthComponent {
     
     this.container.innerHTML = `
       <div class="auth-container unlock-container">
-        <h2>Unlock SPK Desktop</h2>
+        <h2>Unlock Oratr</h2>
         
         ${accountsList}
         
@@ -345,18 +346,13 @@ class AuthComponent {
             </div>
             
             <div class="form-group">
-              <label for="active-key">Active Key (optional)</label>
+              <label for="active-key">Active Key (optional - wallet operations and registering storage node)</label>
               <input type="password" id="active-key" name="active-key">
             </div>
             
             <div class="form-group">
-              <label for="memo-key">Memo Key (optional)</label>
+              <label for="memo-key">Memo Key (optional - used for end to end encryption)</label>
               <input type="password" id="memo-key" name="memo-key">
-            </div>
-            
-            <div class="form-group">
-              <label for="owner-key">Owner Key (optional - use with caution)</label>
-              <input type="password" id="owner-key" name="owner-key">
             </div>
             
             <button type="submit" class="btn btn-primary">Add Account</button>
@@ -416,8 +412,36 @@ class AuthComponent {
       
       if (result.success) {
         successDiv.textContent = `Account ${username} imported successfully!`;
+        
+        // Auto-set as active account if it's the first account or if explicitly requested
+        if (this.accounts.length === 0) {
+          try {
+            await window.api.account.setActive(username);
+            successDiv.textContent += ' (Set as active account)';
+            
+            // Update current account in renderer
+            window.currentAccount = username;
+            if (window.updateAccountDisplay) {
+              window.updateAccountDisplay();
+            }
+            
+            // Dispatch event to notify the main app
+            const event = new CustomEvent('account-activated', { 
+              detail: { username } 
+            });
+            window.dispatchEvent(event);
+          } catch (error) {
+            console.warn('Failed to auto-set active account:', error);
+          }
+        }
+        
         setTimeout(() => {
-          this.showAccountManager();
+          // If this was the first account and we're auto-activating, close the overlay entirely
+          if (this.accounts.length === 0) {
+            this.closeAccountManager();
+          } else {
+            this.showAccountManager();
+          }
         }, 1500);
       } else {
         errorDiv.textContent = result.error || 'Failed to import account';
@@ -432,8 +456,7 @@ class AuthComponent {
       const keys = {
         posting: document.getElementById('posting-key').value,
         active: document.getElementById('active-key').value,
-        memo: document.getElementById('memo-key').value,
-        owner: document.getElementById('owner-key').value
+        memo: document.getElementById('memo-key').value
       };
       
       // Remove empty keys
@@ -451,8 +474,36 @@ class AuthComponent {
       
       if (result.success) {
         successDiv.textContent = `Account ${username} added successfully!`;
+        
+        // Auto-set as active account if it's the first account or if explicitly requested
+        if (this.accounts.length === 0) {
+          try {
+            await window.api.account.setActive(username);
+            successDiv.textContent += ' (Set as active account)';
+            
+            // Update current account in renderer
+            window.currentAccount = username;
+            if (window.updateAccountDisplay) {
+              window.updateAccountDisplay();
+            }
+            
+            // Dispatch event to notify the main app
+            const event = new CustomEvent('account-activated', { 
+              detail: { username } 
+            });
+            window.dispatchEvent(event);
+          } catch (error) {
+            console.warn('Failed to auto-set active account:', error);
+          }
+        }
+        
         setTimeout(() => {
-          this.showAccountManager();
+          // If this was the first account and we're auto-activating, close the overlay entirely
+          if (this.accounts.length === 0) {
+            this.closeAccountManager();
+          } else {
+            this.showAccountManager();
+          }
         }, 1500);
       } else {
         errorDiv.innerHTML = result.error || 'Failed to add account';
@@ -686,10 +737,6 @@ class AuthComponent {
               <span>Memo Key</span>
               <span>${account.hasMemo ? '✓ Present' : '✗ Missing'}</span>
             </div>
-            <div class="key-status ${account.hasOwner ? 'has-key' : 'no-key'}">
-              <span>Owner Key</span>
-              <span>${account.hasOwner ? '✓ Present' : '✗ Missing'}</span>
-            </div>
           </div>
         </div>
         
@@ -718,14 +765,7 @@ class AuthComponent {
             </div>
           ` : ''}
           
-          ${!account.hasOwner ? `
-            <div class="form-group">
-              <label for="owner-key">Owner Key (use with caution)</label>
-              <input type="password" id="owner-key" name="owner-key">
-            </div>
-          ` : ''}
-          
-          ${account.hasPosting && account.hasActive && account.hasMemo && account.hasOwner ? 
+          ${account.hasPosting && account.hasActive && account.hasMemo ? 
             '<p class="info-message">This account has all keys configured.</p>' : 
             '<button type="submit" class="btn btn-primary">Update Keys</button>'
           }
@@ -743,7 +783,7 @@ class AuthComponent {
 
     // Update keys form
     const form = document.getElementById('update-keys-form');
-    if (form && !(account.hasPosting && account.hasActive && account.hasMemo && account.hasOwner)) {
+    if (form && !(account.hasPosting && account.hasActive && account.hasMemo)) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         
@@ -764,10 +804,6 @@ class AuthComponent {
           if (value) keys.memo = value;
         }
         
-        if (!account.hasOwner && document.getElementById('owner-key')) {
-          const value = document.getElementById('owner-key').value;
-          if (value) keys.owner = value;
-        }
         
         if (Object.keys(keys).length === 0) {
           document.getElementById('error-message').textContent = 'Please enter at least one key';
@@ -1031,7 +1067,12 @@ class AuthComponent {
     const authContainer = document.getElementById('auth-container');
     const app = document.getElementById('app');
     
-    // Hide auth container
+    if (!authContainer || !app) return;
+    
+    // Clear the auth container content first to prevent any lingering event handlers
+    authContainer.innerHTML = '';
+    
+    // Hide auth container and reset all overlay styles
     authContainer.style.display = 'none';
     authContainer.style.position = '';
     authContainer.style.top = '';
@@ -1040,10 +1081,28 @@ class AuthComponent {
     authContainer.style.bottom = '';
     authContainer.style.zIndex = '';
     authContainer.style.background = '';
+    authContainer.style.backdropFilter = '';
+    authContainer.style.webkitBackdropFilter = '';
     
-    // Restore app
+    // Restore app visibility and interaction
+    app.style.display = 'block';
     app.style.opacity = '1';
     app.style.pointerEvents = 'auto';
+    app.style.filter = '';
+    app.style.transform = '';
+    
+    // Remove any modal backdrop classes that might be lingering
+    document.body.classList.remove('modal-open');
+    document.documentElement.classList.remove('modal-open');
+    
+    // Clear any modal backdrops that might exist
+    const existingBackdrops = document.querySelectorAll('.modal-backdrop, .auth-backdrop');
+    existingBackdrops.forEach(backdrop => backdrop.remove());
+    
+    // Force a repaint to ensure all styles are applied
+    authContainer.offsetHeight; // Trigger reflow
+    
+    console.log('Account manager closed and styles cleaned up');
   }
 
   /**

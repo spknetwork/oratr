@@ -29,7 +29,7 @@ class StorageNodeManager extends EventEmitter {
         this.lastRegistrationCheck = 0;
         this.cachedRegistrationStatus = null;
         this.running = false;
-        this.stateFile = path.join(os.homedir(), '.spk-desktop', 'storage-node-state.json');
+        this.stateFile = path.join(os.homedir(), '.oratr', 'storage-node-state.json');
         
         // Initialize IPFS Manager
         this.ipfsManager = new IPFSManager({

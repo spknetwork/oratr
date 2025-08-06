@@ -1,4 +1,4 @@
-/* SPK Desktop Styles */
+/* Oratr Styles */
 
 /* Import component styles */
 @import url('styles/network-browser.css');
@@ -126,6 +126,8 @@ main {
     border-radius: 4px 4px 0 0;
     border: 1px solid transparent;
     margin-bottom: -1px;
+    display: flex;
+    align-items: center;
 }
 
 .tab:hover {
@@ -145,6 +147,7 @@ main {
     max-height: calc(100vh - 150px);
     overflow-y: auto;
     padding: 2rem;
+    position: relative;
 }
 
 .tab-content.active {
@@ -411,6 +414,7 @@ main {
     max-height: calc(100vh - 150px);
     overflow-y: auto;
     padding: 2rem;
+    position: relative;
 }
 
 .tab-content.active {
@@ -2015,7 +2019,7 @@ input:checked + .toggle-slider:before {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    margin-left: 8px;
+    margin-right: 8px;
     display: inline-block;
     visibility: hidden;
 }
@@ -3362,4 +3366,102 @@ textarea.form-control {
 
 .btn-secondary:hover {
     background-color: #5a6268;
+}
+
+
+/* Storage Node Starting Overlay */
+.storage-starting-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(26, 26, 26, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(5px);
+}
+
+.starting-content {
+    text-align: center;
+    max-width: 500px;
+    padding: 2rem;
+}
+
+.spinner-large {
+    width: 60px;
+    height: 60px;
+    border: 4px solid rgba(76, 175, 80, 0.3);
+    border-top-color: #4CAF50;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1.5rem;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.starting-content h3 {
+    color: #4CAF50;
+    margin-bottom: 1.5rem;
+}
+
+.progress-container {
+    margin-bottom: 1.5rem;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #333;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50, #66BB6A);
+    transition: width 0.3s ease;
+    border-radius: 4px;
+}
+
+.status-text {
+    color: #888;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.startup-logs {
+    max-height: 200px;
+    overflow-y: auto;
+    text-align: left;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.startup-logs .log-entry {
+    margin: 0.25rem 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.startup-logs .log-success {
+    color: #4CAF50;
+}
+
+.startup-logs .log-info {
+    color: #888;
+}
+
+.startup-logs .log-error {
+    color: #f44336;
 }

@@ -1,6 +1,6 @@
-# SPK Desktop
+# Oratr
 
-A native desktop application for the SPK Network providing video transcoding, IPFS file management, and ProofOfAccess storage node capabilities.
+A native desktop application for the SPK Network providing video transcoding, IPFS file management, and ProofOfAccess storage node capabilities. Oratr (formerly SPK Desktop) empowers users to participate in decentralized video infrastructure.
 
 ## Features
 
@@ -23,7 +23,7 @@ This project follows strict TDD principles:
 ### Project Structure
 
 ```
-spk-desktop/
+oratr/
 ├── src/
 │   ├── main/              # Electron main process
 │   │   ├── index.js       # Entry point
@@ -50,15 +50,14 @@ spk-desktop/
 ### Prerequisites
 
 - Node.js 18+
-- FFmpeg (installed system-wide)
 - Git
 
 ### Setup
 
 ```bash
 # Clone the repository
-git clone [repository-url]
-cd spk-desktop
+git clone https://github.com/spknetwork/oratr.git
+cd oratr
 
 # Install dependencies
 npm install
@@ -104,7 +103,7 @@ npm run build:linux
 ## Core Modules
 
 ### Video Transcoder
-- Wraps native FFmpeg for high-performance encoding
+- Includes native FFmpeg for high-performance encoding
 - Supports multiple input formats
 - Generates HLS output with configurable quality levels
 - Progress tracking and cancellation
@@ -130,9 +129,9 @@ npm run build:linux
 ## Configuration
 
 Configuration is stored in:
-- Windows: `%APPDATA%/spk-desktop`
-- macOS: `~/Library/Application Support/spk-desktop`
-- Linux: `~/.config/spk-desktop`
+- Windows: `%APPDATA%/Oratr`
+- macOS: `~/Library/Application Support/Oratr`
+- Linux: `~/.config/oratr`
 
 ## API Integration
 

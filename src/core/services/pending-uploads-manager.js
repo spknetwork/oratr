@@ -12,7 +12,7 @@ class PendingUploadsManager extends EventEmitter {
   constructor() {
     super();
     this.pendingUploads = new Map();
-    this.storageFile = path.join(os.homedir(), '.spk-desktop', 'pending-uploads.json');
+    this.storageFile = path.join(os.homedir(), '.oratr', 'pending-uploads.json');
     this.initialized = false;
   }
 

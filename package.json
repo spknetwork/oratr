@@ -1,7 +1,7 @@
 {
-  "name": "spk-desktop",
-  "version": "0.1.9",
-  "description": "SPK Network Desktop Application - Video transcoding, IPFS storage, and ProofOfAccess node",
+  "name": "oratr",
+  "version": "0.2.0",
+  "description": "Oratr - SPK Network Desktop Application for Video transcoding, IPFS storage, and ProofOfAccess node",
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron . --no-sandbox --remote-debugging-port=9222",
@@ -14,13 +14,15 @@
     "test:e2e": "cross-env NODE_OPTIONS=\"--experimental-vm-modules\" jest --testPathPattern=test/e2e --runInBand",
     "lint": "eslint src test --ext .js",
     "lint:fix": "eslint src test --ext .js --fix",
+    "prebuild": "node build/download-binaries.js",
     "build": "electron-builder",
-    "build:win": "electron-builder --win --publish=never",
-    "build:mac": "electron-builder --mac --publish=never",
-    "build:linux": "electron-builder --linux --publish=never",
+    "build:win": "npm run prebuild && electron-builder --win --publish=never",
+    "build:mac": "npm run prebuild && electron-builder --mac --publish=never",
+    "build:linux": "npm run prebuild && electron-builder --linux --publish=never",
     "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
+    "oratr",
     "spk",
     "ipfs",
     "video",
@@ -48,6 +50,7 @@
     "dmg-license": "^1.0.11"
   },
   "dependencies": {
+    "@disregardfiat/proofofaccess": "^0.4.1",
     "@disregardfiat/spk-js": "^1.0.0",
     "@hiveio/hive-js": "^2.0.8",
     "axios": "^1.6.5",
@@ -66,29 +69,43 @@
     "ws": "^8.18.3"
   },
   "build": {
-    "appId": "io.spk.desktop",
-    "productName": "SPK Desktop",
+    "appId": "io.spknetwork.oratr",
+    "productName": "Oratr",
     "directories": {
       "output": "dist"
     },
     "files": [
       "src/**/*",
       "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "bin/**/*",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
       "category": "public.app-category.video",
+      "icon": "resources/images/icons/mac/icon.icns",
       "target": [
         "zip"
       ]
     },
     "win": {
+      "icon": "resources/images/icons/win/icon.ico",
       "target": [
         "nsis",
         "portable"
       ]
     },
     "linux": {
+      "icon": "resources/images/icons/png/512x512.png",
       "target": [
         "AppImage",
         "deb",

@@ -14,7 +14,7 @@ class POAStorageNode extends EventEmitter {
     super();
     
     this.config = {
-      dataPath: config.dataPath || path.join(os.homedir(), '.spk-desktop', 'poa'),
+      dataPath: config.dataPath || path.join(os.homedir(), '.oratr', 'poa'),
       binaryPath: config.binaryPath || path.join(os.homedir(), 'proofofaccess', 'main'),
       wsPort: config.wsPort || 8000,
       ipfsPort: config.ipfsPort || 5001,

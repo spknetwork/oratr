@@ -511,7 +511,7 @@ class IntegratedStorageService extends EventEmitter {
     
     const statePath = path.join(
       process.env.HOME || process.env.USERPROFILE,
-      '.spk-desktop',
+      '.oratr',
       'storage-state.json'
     );
     

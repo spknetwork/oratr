@@ -213,7 +213,7 @@ class SettingsModal {
                 <div class="setting-group">
                   <label class="setting-label">
                     <input type="checkbox" id="share-usage-stats"> Share anonymous usage statistics
-                    <small>Help improve SPK Desktop by sharing anonymous usage data</small>
+                    <small>Help improve Oratr by sharing anonymous usage data</small>
                   </label>
                 </div>
                 

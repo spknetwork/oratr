@@ -235,7 +235,7 @@ class POAService {
    * Check if POA binary exists
    */
   async checkBinary() {
-    const binaryPath = path.join(os.homedir(), '.spk-desktop', 'poa', 'proofofaccess');
+    const binaryPath = path.join(os.homedir(), '.oratr', 'poa', 'proofofaccess');
     
     try {
       await fs.access(binaryPath, fs.constants.X_OK);
@@ -272,7 +272,7 @@ class POAService {
       success: false,
       message: 'Automatic download not yet implemented',
       manualDownloadUrl: downloadUrl,
-      installPath: path.join(os.homedir(), '.spk-desktop', 'poa', 'proofofaccess')
+      installPath: path.join(os.homedir(), '.oratr', 'poa', 'proofofaccess')
     };
   }
   
@@ -325,7 +325,7 @@ class POAService {
    * Load saved configuration
    */
   async loadConfig() {
-    const configPath = path.join(os.homedir(), '.spk-desktop', 'poa-service.json');
+    const configPath = path.join(os.homedir(), '.oratr', 'poa-service.json');
     
     try {
       const data = await fs.readFile(configPath, 'utf8');
@@ -344,7 +344,7 @@ class POAService {
    * Save configuration
    */
   async saveConfig(config) {
-    const configPath = path.join(os.homedir(), '.spk-desktop', 'poa-service.json');
+    const configPath = path.join(os.homedir(), '.oratr', 'poa-service.json');
     const dir = path.dirname(configPath);
     
     await fs.mkdir(dir, { recursive: true });
