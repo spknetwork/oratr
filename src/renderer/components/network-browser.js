@@ -46,13 +46,13 @@ class NetworkBrowser {
         this.container.innerHTML = `
             <div class="network-browser">
                 <div class="browser-header">
-                    <h3>Network File Browser</h3>
+                    <h3>Network Contract Viewer</h3>
                     <div class="view-tabs">
                         <button class="view-tab active" data-view="opportunities">
                             Storage Opportunities
                         </button>
                         <button class="view-tab" data-view="stored">
-                            My Stored Files
+                            My Stored Contracts
                         </button>
                     </div>
                 </div>
@@ -78,11 +78,11 @@ class NetworkBrowser {
                 
                 <div class="browser-stats">
                     <div class="stat-item">
-                        <span class="stat-label">Selected Files:</span>
+                        <span class="stat-label">Selected Contracts:</span>
                         <span class="stat-value" id="selected-files">0</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-label">Selected Size:</span>
+                        <span class="stat-label">Total Size:</span>
                         <span class="stat-value" id="selected-size">0 Bytes</span>
                     </div>
                 </div>
@@ -270,7 +270,7 @@ class NetworkBrowser {
         const fileList = document.getElementById('file-list');
         
         if (!files || files.length === 0) {
-            fileList.innerHTML = '<div class="no-files">No files found</div>';
+            fileList.innerHTML = '<div class="no-files">No contracts found</div>';
             this.updateSelectionUI();
             return;
         }
@@ -288,7 +288,7 @@ class NetworkBrowser {
                     </div>
                     
                     <div class="contract-utilized">
-                        ${this.formatBytes(file.utilized || file.size || 0)}
+                        ${this.formatBytes(file.utilized || file.totalSize || file.size || 0)}
                     </div>
                     
                     <div class="contract-owner">
@@ -296,7 +296,7 @@ class NetworkBrowser {
                     </div>
                     
                     <div class="contract-nodes">
-                        ${file.storageNodes?.length || 0}/${file.power || 3}
+                        ${file.storageNodes?.length || file.nodeTotal || 0}/${file.power || 3}
                     </div>
                     
                     <div class="contract-actions">
@@ -366,7 +366,7 @@ class NetworkBrowser {
         for(const id of selectedIds) {
             const file = this.currentFiles.find(f => (f.id || f.cid) === id);
             if (file) {
-                selectedSize += file.utilized || file.size || 0;
+                selectedSize += file.utilized || file.totalSize || file.size || 0;
             }
         }
         document.getElementById('selected-files').textContent = count;
