@@ -1,7 +1,6 @@
 const { EventEmitter } = require('events');
 const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static-electron');
-const ffprobePath = require('ffprobe-static-electron');
+const which = require('which');
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
@@ -14,10 +13,9 @@ const { v4: uuidv4 } = require('uuid');
 class Transcoder extends EventEmitter {
   constructor(config = {}) {
     super();
-    // Use bundled ffmpeg binary from ffmpeg-static-electron
-    this.ffmpegPath = config.ffmpegPath || ffmpegPath.path;
-    // Use bundled ffprobe binary from ffprobe-static-electron
-    this.ffprobePath = config.ffprobePath || ffprobePath.path;
+    // Resolve ffmpeg/ffprobe paths in order: config → packaged bin → system PATH
+    this.ffmpegPath = config.ffmpegPath || this.resolveBinaryPath('ffmpeg');
+    this.ffprobePath = config.ffprobePath || this.resolveBinaryPath('ffprobe');
     this.tempDir = config.tempDir || path.join(os.tmpdir(), 'spk-transcode');
     this.activeJobs = new Map();
     this.isAvailable = null;
@@ -25,6 +23,25 @@ class Transcoder extends EventEmitter {
     // Set FFmpeg paths
     ffmpeg.setFfmpegPath(this.ffmpegPath);
     ffmpeg.setFfprobePath(this.ffprobePath);
+  }
+
+  resolveBinaryPath(binaryName) {
+    // Look in app resources/bin first (packaged with electron-builder)
+    const possible = [];
+    const appRoot = path.resolve(__dirname, '../../../');
+    possible.push(path.join(appRoot, 'resources', 'bin', binaryName));
+    possible.push(path.join(appRoot, 'bin', binaryName));
+
+    for (const p of possible) {
+      try { require('fs').accessSync(p); return p; } catch {}
+    }
+
+    // Fall back to system PATH
+    try {
+      return which.sync(binaryName);
+    } catch {
+      throw new Error(`${binaryName} not found. Please install it or provide a path via config.{ffmpegPath,ffprobePath}`);
+    }
   }
 
   /**
