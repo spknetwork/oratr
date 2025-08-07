@@ -719,6 +719,18 @@ window.api.on('storage:already-running', async (data) => {
         }
     }, 5000);
     
+    // Start auto-sync for missing files (every 30 seconds)
+    if (window.storageSyncInterval) {
+        clearInterval(window.storageSyncInterval);
+    }
+    window.storageSyncInterval = setInterval(async () => {
+        try {
+            await syncMissingFilesQuietly();
+        } catch (error) {
+            console.error('Failed to auto-sync files:', error);
+        }
+    }, 30000); // 30 seconds
+    
     showNotification('Storage node auto-started from previous session', 'success');
 });
 
@@ -2005,6 +2017,18 @@ async function startStorageNode() {
             }
         }, 5000); // Refresh every 5 seconds
         
+        // Start auto-sync for missing files (every 30 seconds)
+        if (window.storageSyncInterval) {
+            clearInterval(window.storageSyncInterval);
+        }
+        window.storageSyncInterval = setInterval(async () => {
+            try {
+                await syncMissingFilesQuietly();
+            } catch (error) {
+                console.error('Failed to auto-sync files:', error);
+            }
+        }, 30000); // 30 seconds
+        
         showNotification('Storage node started successfully!', 'success');
         
     } catch (error) {
@@ -2197,7 +2221,7 @@ async function updatePinnedFilesInfo() {
                         </div>
                         <div class="stat-item">
                             <div class="stat-label">Missing Files</div>
-                            <div class="stat-value" id="missing-files" style="color: #ff6b6b;">0</div>
+                            <div class="stat-value" id="missing-files">0</div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-label">Total Size</div>
@@ -3297,21 +3321,155 @@ async function checkContractsNow() {
     }
 }
 
+// Quiet sync function for auto-sync (no notifications unless there's an error)
+async function syncMissingFilesQuietly() {
+    try {
+        // Get the current username
+        const poaConfig = await window.api.poa.getConfig();
+        if (!poaConfig || !poaConfig.account) {
+            return; // Silently skip if not configured
+        }
+        const username = poaConfig.account;
+        
+        // Fetch stored contracts from the API
+        const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
+        if (!contractsResponse.ok) {
+            console.error(`Failed to fetch contracts: ${contractsResponse.statusText}`);
+            return;
+        }
+        
+        const contractsData = await contractsResponse.json();
+        const storedContracts = contractsData.contracts || contractsData || [];
+        
+        // Get currently pinned files from IPFS
+        const pinResponse = await fetch('http://127.0.0.1:5001/api/v0/pin/ls?type=recursive', {
+            method: 'POST'
+        });
+        
+        if (!pinResponse.ok) {
+            console.error('Failed to get pinned files from IPFS');
+            return;
+        }
+        
+        const pinData = await pinResponse.json();
+        const pinnedCIDs = new Set(Object.keys(pinData.Keys || {}));
+        
+        // Find missing CIDs - only look at the contract IDs themselves
+        const requiredCIDs = storedContracts.map(c => c.id);
+        const missingCIDs = requiredCIDs.filter(cid => !pinnedCIDs.has(cid));
+        
+        if (missingCIDs.length === 0) {
+            return; // All synced, nothing to do
+        }
+        
+        // Pin missing files quietly
+        let pinnedCount = 0;
+        
+        for (const cid of missingCIDs) {
+            try {
+                const pinAddResponse = await fetch(`http://127.0.0.1:5001/api/v0/pin/add?arg=${cid}&progress=false`, {
+                    method: 'POST'
+                });
+                
+                if (pinAddResponse.ok) {
+                    pinnedCount++;
+                    console.log(`Auto-synced: ${cid}`);
+                }
+            } catch (error) {
+                console.error(`Error auto-pinning ${cid}:`, error);
+            }
+        }
+        
+        if (pinnedCount > 0) {
+            console.log(`Auto-sync: ${pinnedCount} files pinned`);
+            // Refresh the dashboard silently
+            await updateStorageDashboard();
+        }
+        
+    } catch (error) {
+        console.error('Auto-sync error:', error);
+    }
+}
+
 // Function to sync missing files
 async function syncMissingFiles() {
     try {
         showNotification('Starting file sync...', 'info');
         
-        // Trigger a manual sync through the file sync service
-        const result = await window.api.storage.syncFiles?.();
-        
-        if (result && result.success) {
-            showNotification(`Sync complete: ${result.pinned || 0} files pinned`, 'success');
-            // Refresh the dashboard to show updated stats
-            await updateStorageDashboard();
-        } else {
-            showNotification('File sync failed: ' + (result?.error || 'Unknown error'), 'error');
+        // Get the current username
+        const poaConfig = await window.api.poa.getConfig();
+        if (!poaConfig || !poaConfig.account) {
+            showNotification('PoA not configured. Please configure your storage node first.', 'error');
+            return;
         }
+        const username = poaConfig.account;
+        
+        // Fetch stored contracts from the API
+        const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
+        if (!contractsResponse.ok) {
+            throw new Error(`Failed to fetch contracts: ${contractsResponse.statusText}`);
+        }
+        
+        const contractsData = await contractsResponse.json();
+        const storedContracts = contractsData.contracts || contractsData || [];
+        
+        // Get currently pinned files from IPFS
+        const pinResponse = await fetch('http://127.0.0.1:5001/api/v0/pin/ls?type=recursive', {
+            method: 'POST'
+        });
+        
+        if (!pinResponse.ok) {
+            throw new Error('Failed to get pinned files from IPFS');
+        }
+        
+        const pinData = await pinResponse.json();
+        const pinnedCIDs = new Set(Object.keys(pinData.Keys || {}));
+        
+        // Find missing CIDs - only look at the contract IDs themselves
+        const requiredCIDs = storedContracts.map(c => c.id);
+        const missingCIDs = requiredCIDs.filter(cid => !pinnedCIDs.has(cid));
+        
+        if (missingCIDs.length === 0) {
+            showNotification('All files are already synced!', 'success');
+            await updateStorageDashboard();
+            return;
+        }
+        
+        // Pin missing files
+        let pinnedCount = 0;
+        let failedCount = 0;
+        
+        for (const cid of missingCIDs) {
+            try {
+                const pinAddResponse = await fetch(`http://127.0.0.1:5001/api/v0/pin/add?arg=${cid}&progress=false`, {
+                    method: 'POST'
+                });
+                
+                if (pinAddResponse.ok) {
+                    pinnedCount++;
+                    console.log(`Successfully pinned: ${cid}`);
+                } else {
+                    failedCount++;
+                    console.error(`Failed to pin ${cid}: ${pinAddResponse.statusText}`);
+                }
+            } catch (error) {
+                failedCount++;
+                console.error(`Error pinning ${cid}:`, error);
+            }
+        }
+        
+        // Show results
+        if (pinnedCount > 0 && failedCount === 0) {
+            showNotification(`Sync complete: ${pinnedCount} files pinned successfully`, 'success');
+        } else if (pinnedCount > 0) {
+            showNotification(`Sync partial: ${pinnedCount} pinned, ${failedCount} failed`, 'warning');
+        } else {
+            showNotification(`Sync failed: Could not pin any files`, 'error');
+        }
+        
+        // Refresh the dashboard to show updated stats
+        await updateStorageDashboard();
+        
     } catch (error) {
         console.error('Failed to sync files:', error);
         showNotification('Failed to sync files: ' + error.message, 'error');

@@ -362,7 +362,6 @@ class NetworkBrowser {
 
     async removeSelected() {
         if(this.selectedContracts.size === 0) return;
-        if (!confirm(`Are you sure you want to remove ${this.selectedContracts.size} contracts?`)) return;
 
         const contractIds = Array.from(this.selectedContracts);
         try {
@@ -388,8 +387,6 @@ class NetworkBrowser {
     }
     
     async storeContract(contractId) {
-        if (!confirm('Store this contract?')) return;
-        
         try {
             const result = await this.storageManager.storeFiles([contractId]);
             alert('Contract stored successfully!');
@@ -401,7 +398,6 @@ class NetworkBrowser {
     }
 
     async removeContract(contractId) {
-        if(!confirm('Are you sure you want to remove this contract?')) return;
         try {
             const response = await window.api.spk.removeFiles([contractId]);
             if(response.success) {
