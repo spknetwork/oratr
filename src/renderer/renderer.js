@@ -2165,18 +2165,19 @@ async function updatePinnedFilesInfo() {
             return;
         }
         
-        // Fetch stored contracts from the API
+        // Fetch stored contracts from the API - this is our source of truth
         let contracts = [];
+        let apiData = null;
         try {
             const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
             if (contractsResponse.ok) {
-                const contractsData = await contractsResponse.json();
-                // Handle the actual API response format
-                contracts = contractsData.contractsStoring || contractsData.contracts || [];
+                apiData = await contractsResponse.json();
+                contracts = apiData.contractsStoring || apiData.contracts || [];
                 console.log(`Fetched ${contracts.length} stored contracts for ${username}`);
             }
         } catch (error) {
             console.error('Failed to fetch contracts:', error);
+            return;
         }
         
         // Get actual pinned CIDs from IPFS directly
@@ -2192,45 +2193,81 @@ async function updatePinnedFilesInfo() {
             }
         } catch (error) {
             console.error('Failed to get pinned CIDs:', error);
-            // Fallback to API method if direct IPFS fails
-            pinnedCIDs = await window.api.contracts?.getPinnedCIDs?.() || [];
         }
         
-        // Calculate statistics
+        // Calculate comprehensive statistics from stored-by API
+        let activeContracts = 0;
         let totalFiles = 0;
         let totalSize = 0;
-        let missingFiles = 0;
+        let missingPins = [];
+        let pinnedCount = 0;
         const pinnedSet = new Set(pinnedCIDs);
         const requiredCIDs = new Set();
         
-        // For stored contracts, we only need to pin the contract ID itself
+        // Process each contract from stored-by API
         contracts.forEach(contract => {
-            const cid = contract.id || contract.cid;
-            if (cid) {
-                requiredCIDs.add(cid);
-                totalFiles++;
-                totalSize += contract.utilized || contract.size || 0;
-                
-                if (!pinnedSet.has(cid)) {
-                    missingFiles++;
+            // Count active contracts
+            activeContracts++;
+            
+            // Calculate total size from contract
+            const contractSize = contract.totalSize || contract.utilized || contract.size || 0;
+            totalSize += contractSize;
+            
+            // Count files in contract
+            const fileCount = contract.fileCount || (contract.files ? contract.files.length : 1);
+            totalFiles += fileCount;
+            
+            // Check if contract ID is pinned (main requirement for storage nodes)
+            const contractId = contract.id;
+            if (contractId) {
+                requiredCIDs.add(contractId);
+                if (pinnedSet.has(contractId)) {
+                    pinnedCount++;
+                } else {
+                    missingPins.push(contractId);
                 }
+            }
+            
+            // Also check individual files if they exist (optional but good to track)
+            if (contract.files && Array.isArray(contract.files)) {
+                contract.files.forEach(file => {
+                    if (file.cid && file.cid !== contractId) {
+                        // These are additional files, not strictly required but good to have
+                        requiredCIDs.add(file.cid);
+                        if (!pinnedSet.has(file.cid)) {
+                            // Note: We don't count these as missing for storage node purposes
+                            console.log(`Optional file not pinned: ${file.cid}`);
+                        }
+                    }
+                });
             }
         });
         
-        // Update the Files Stored display with more detail
+        const missingCount = missingPins.length;
+        
+        // Update main dashboard stats
+        const contractsEl = document.getElementById('storage-contracts');
+        if (contractsEl) {
+            contractsEl.textContent = activeContracts;
+        }
+        
         const filesStoredEl = document.getElementById('storage-files');
         if (filesStoredEl) {
-            const pinnedCount = pinnedSet.size;
-            const syncPercentage = totalFiles > 0 ? Math.round(((totalFiles - missingFiles) / totalFiles) * 100) : 100;
+            const syncPercentage = activeContracts > 0 ? Math.round((pinnedCount / activeContracts) * 100) : 100;
             
             filesStoredEl.innerHTML = `
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <div>${pinnedCount} pinned</div>
-                    <div style="font-size: 0.85em; color: ${missingFiles > 0 ? '#ff6b6b' : '#51cf66'};">
-                        ${missingFiles > 0 ? `Missing: ${missingFiles}` : 'All synced'} (${syncPercentage}%)
+                    <div>${totalFiles} files</div>
+                    <div style="font-size: 0.85em; color: ${missingCount > 0 ? '#ff6b6b' : '#51cf66'};">
+                        ${missingCount > 0 ? `Missing: ${missingCount}` : 'All synced'} (${syncPercentage}%)
                     </div>
                 </div>
             `;
+        }
+        
+        const spaceUsedEl = document.getElementById('storage-space');
+        if (spaceUsedEl) {
+            spaceUsedEl.textContent = formatBytes(totalSize);
         }
         
         // Add a detailed section if it doesn't exist
@@ -2241,18 +2278,18 @@ async function updatePinnedFilesInfo() {
             const detailsSection = document.createElement('div');
             detailsSection.innerHTML = `
                 <div class="dashboard-section" style="margin-top: 20px;">
-                    <h3>Pinned Files Status</h3>
+                    <h3>Storage Contract Status</h3>
                     <div id="pinned-files-details" class="stats-grid">
                         <div class="stat-item">
-                            <div class="stat-label">Total Required</div>
+                            <div class="stat-label">Active Contracts</div>
                             <div class="stat-value" id="total-required-files">0</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-label">Currently Pinned</div>
+                            <div class="stat-label">Contracts Pinned</div>
                             <div class="stat-value" id="currently-pinned-files">0</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-label">Missing Files</div>
+                            <div class="stat-label">Missing Pins</div>
                             <div class="stat-value" id="missing-files">0</div>
                         </div>
                         <div class="stat-item">
@@ -2273,11 +2310,20 @@ async function updatePinnedFilesInfo() {
         
         // Update the detailed stats
         if (document.getElementById('total-required-files')) {
-            document.getElementById('total-required-files').textContent = totalFiles;
-            document.getElementById('currently-pinned-files').textContent = pinnedSet.size;
-            document.getElementById('missing-files').textContent = missingFiles;
+            document.getElementById('total-required-files').textContent = activeContracts;
+            document.getElementById('currently-pinned-files').textContent = pinnedCount;
+            document.getElementById('missing-files').textContent = missingCount;
             document.getElementById('pinned-total-size').textContent = formatBytes(totalSize);
+            
+            // Update sync button state
+            const syncBtn = document.querySelector('button[onclick="syncMissingFiles()"]');
+            if (syncBtn) {
+                syncBtn.disabled = missingCount === 0;
+            }
         }
+        
+        // Store missing pins globally for sync function
+        window.missingContractPins = missingPins;
         
     } catch (error) {
         console.error('Failed to update pinned files info:', error);
@@ -3401,7 +3447,7 @@ async function syncMissingFilesQuietly() {
         const pinnedCIDs = new Set(Object.keys(pinData.Keys || {}));
         
         // Find missing CIDs - only look at the contract IDs themselves
-        const requiredCIDs = storedContracts.map(c => c.id);
+        const requiredCIDs = storedContracts.map(c => c.id).filter(id => id);
         const missingCIDs = requiredCIDs.filter(cid => !pinnedCIDs.has(cid));
         
         if (missingCIDs.length === 0) {
@@ -3442,58 +3488,65 @@ async function syncMissingFiles() {
     try {
         showNotification('Starting file sync...', 'info');
         
-        // Get the current username from multiple sources
-        let username = null;
-        try {
-            const poaConfig = await window.api.poa.getConfig();
-            if (poaConfig && poaConfig.account) {
-                username = poaConfig.account;
-            }
-        } catch (e) {
-            console.error('Could not get poa config', e);
-        }
-        
-        // Fallback to currentAccount if POA config didn't work
-        if (!username && window.currentAccount) {
-            username = window.currentAccount;
-        }
-        
-        if (!username) {
-            showNotification('No account found. Please log in first.', 'error');
-            return;
-        }
-        
-        // Fetch stored contracts from the API
-        const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
-        if (!contractsResponse.ok) {
-            throw new Error(`Failed to fetch contracts: ${contractsResponse.statusText}`);
-        }
-        
-        const contractsData = await contractsResponse.json();
-        // Handle the actual API response format
-        const storedContracts = contractsData.contractsStoring || contractsData.contracts || [];
-        
-        // Get currently pinned files from IPFS
-        const pinResponse = await fetch('http://127.0.0.1:5001/api/v0/pin/ls?type=recursive', {
-            method: 'POST'
-        });
-        
-        if (!pinResponse.ok) {
-            throw new Error('Failed to get pinned files from IPFS');
-        }
-        
-        const pinData = await pinResponse.json();
-        const pinnedCIDs = new Set(Object.keys(pinData.Keys || {}));
-        
-        // Find missing CIDs - only look at the contract IDs themselves
-        const requiredCIDs = storedContracts.map(c => c.id);
-        const missingCIDs = requiredCIDs.filter(cid => !pinnedCIDs.has(cid));
+        // If we have cached missing pins, use them, otherwise fetch fresh
+        let missingCIDs = window.missingContractPins || [];
         
         if (missingCIDs.length === 0) {
-            showNotification('All files are already synced!', 'success');
+            // Get the current username from multiple sources
+            let username = null;
+            try {
+                const poaConfig = await window.api.poa.getConfig();
+                if (poaConfig && poaConfig.account) {
+                    username = poaConfig.account;
+                }
+            } catch (e) {
+                console.error('Could not get poa config', e);
+            }
+            
+            // Fallback to currentAccount if POA config didn't work
+            if (!username && window.currentAccount) {
+                username = window.currentAccount;
+            }
+            
+            if (!username) {
+                showNotification('No account found. Please log in first.', 'error');
+                return;
+            }
+            
+            // Fetch stored contracts from the API
+            const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
+            if (!contractsResponse.ok) {
+                throw new Error(`Failed to fetch contracts: ${contractsResponse.statusText}`);
+            }
+            
+            const contractsData = await contractsResponse.json();
+            // Handle the actual API response format
+            const storedContracts = contractsData.contractsStoring || contractsData.contracts || [];
+            
+            // Get currently pinned files from IPFS
+            const pinResponse = await fetch('http://127.0.0.1:5001/api/v0/pin/ls?type=recursive', {
+                method: 'POST'
+            });
+            
+            if (!pinResponse.ok) {
+                throw new Error('Failed to get pinned files from IPFS');
+            }
+            
+            const pinData = await pinResponse.json();
+            const pinnedCIDs = new Set(Object.keys(pinData.Keys || {}));
+            
+            // Find missing CIDs - only look at the contract IDs themselves
+            const requiredCIDs = storedContracts.map(c => c.id).filter(id => id);
+            missingCIDs = requiredCIDs.filter(cid => !pinnedCIDs.has(cid));
+        }
+        
+        if (missingCIDs.length === 0) {
+            showNotification('All contracts are already synced!', 'success');
             await updateStorageDashboard();
             return;
         }
+        
+        showNotification(`Pinning ${missingCIDs.length} missing contracts...`, 'info');
         
         // Pin missing files
         let pinnedCount = 0;
@@ -3520,14 +3573,15 @@ async function syncMissingFiles() {
         
         // Show results
         if (pinnedCount > 0 && failedCount === 0) {
-            showNotification(`Sync complete: ${pinnedCount} files pinned successfully`, 'success');
+            showNotification(`Sync complete: ${pinnedCount} contracts pinned successfully`, 'success');
         } else if (pinnedCount > 0) {
             showNotification(`Sync partial: ${pinnedCount} pinned, ${failedCount} failed`, 'warning');
         } else {
-            showNotification(`Sync failed: Could not pin any files`, 'error');
+            showNotification(`Sync failed: Could not pin any contracts`, 'error');
         }
         
-        // Refresh the dashboard to show updated stats
+        // Clear the cache and refresh
+        window.missingContractPins = [];
         await updateStorageDashboard();
         
     } catch (error) {
