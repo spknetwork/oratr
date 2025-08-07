@@ -39,7 +39,7 @@ class StorageNodeIntegration {
       ipfsManager: this.ipfsManager,
       storageNode: this.poaStorageNode,
       autoStart: this.config.autoStartSync,
-      syncInterval: 5 * 60 * 1000, // 5 minutes
+      syncInterval: 60 * 1000, // 1 minute (reduced from 5 minutes to avoid connection overload)
       maxRetries: 3
     });
     

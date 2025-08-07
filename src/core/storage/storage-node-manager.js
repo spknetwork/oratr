@@ -484,7 +484,8 @@ class StorageNodeManager extends EventEmitter {
         }
         
         try {
-            const result = await this.spkInstance.storeFiles(contractIds);
+            // Pass false as second parameter to skip contract verification
+            const result = await this.spkInstance.storeFiles(contractIds, false);
             await this.getStoredContracts(); // Refresh list
             this.emit('files-stored', result);
             return result;
@@ -522,7 +523,8 @@ class StorageNodeManager extends EventEmitter {
         }
         
         try {
-            const result = await this.spkInstance.batchStore(contractIds, chunkSize);
+            // Pass false as third parameter to skip contract verification
+            const result = await this.spkInstance.batchStore(contractIds, chunkSize, false);
             await this.getStoredContracts(); // Refresh list
             this.emit('batch-stored', result);
             return result;

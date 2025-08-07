@@ -25,12 +25,13 @@ class FileSyncService extends EventEmitter {
     this.config = {
       username,
       spkApiUrl: config.spkApiUrl || 'https://spktest.dlux.io',
-      syncInterval: config.syncInterval || 5 * 60 * 1000, // 5 minutes default
+      syncInterval: config.syncInterval || 60 * 1000, // 1 minute default (reduced from 5 minutes)
       maxRetries: config.maxRetries || 3,
       retryDelay: config.retryDelay || 1000,
       autoStart: config.autoStart || false,
       ipfsManager: config.ipfsManager,
       storageNode: config.storageNode,
+      maxConcurrentPins: config.maxConcurrentPins || 50, // Limit concurrent pin requests
       ...config
     };
     
@@ -214,19 +215,57 @@ class FileSyncService extends EventEmitter {
         cids.forEach(cid => shouldBePinned.add(cid));
       }
       
-      // Pin files that aren't currently pinned
+      // Pin files that aren't currently pinned (with rolling concurrency limit)
+      const cidsToPin = [];
       for (const cid of shouldBePinned) {
         if (!currentlyPinned.has(cid)) {
+          cidsToPin.push(cid);
+        }
+      }
+      
+      // Create a map to track CID to contract for scatter-shot approach
+      const cidToContract = new Map();
+      for (const contract of contracts) {
+        const cids = this.extractCIDsFromContract(contract);
+        cids.forEach(cid => cidToContract.set(cid, contract));
+      }
+      
+      // Scatter-shot approach: interleave CIDs from different contracts
+      const scatteredCids = [];
+      const contractGroups = new Map();
+      
+      // Group CIDs by contract
+      for (const cid of cidsToPin) {
+        const contract = cidToContract.get(cid);
+        const contractId = contract?.id || 'unknown';
+        if (!contractGroups.has(contractId)) {
+          contractGroups.set(contractId, []);
+        }
+        contractGroups.get(contractId).push(cid);
+      }
+      
+      // Interleave CIDs from different contracts for better distribution
+      const maxLength = Math.max(...Array.from(contractGroups.values()).map(arr => arr.length));
+      for (let i = 0; i < maxLength; i++) {
+        for (const [contractId, cids] of contractGroups) {
+          if (i < cids.length) {
+            scatteredCids.push(cids[i]);
+          }
+        }
+      }
+      
+      // Use a rolling window approach with max concurrent pins
+      const maxConcurrent = this.config.maxConcurrentPins;
+      const activePromises = new Set();
+      
+      const pinWithLimit = async (cid) => {
+        const promise = (async () => {
           try {
             await this.config.ipfsManager.pinFile(cid);
             this.pinnedCIDs.add(cid);
             result.pinned++;
             
-            // Find contract ID for this CID
-            const contract = contracts.find(c => 
-              this.extractCIDsFromContract(c).includes(cid)
-            );
-            
+            const contract = cidToContract.get(cid);
             this.emit('file-pinned', {
               cid,
               contractId: contract ? contract.id : 'unknown'
@@ -234,8 +273,30 @@ class FileSyncService extends EventEmitter {
           } catch (error) {
             result.errors++;
             this.emit('error', new Error(`Failed to pin CID ${cid}: ${error.message}`));
+          } finally {
+            activePromises.delete(promise);
           }
+        })();
+        
+        activePromises.add(promise);
+        return promise;
+      };
+      
+      // Process CIDs with rolling window
+      for (const cid of scatteredCids) {
+        // Wait if we've hit the concurrent limit
+        while (activePromises.size >= maxConcurrent) {
+          // Wait for at least one to complete
+          await Promise.race(activePromises);
         }
+        
+        // Start new pin without waiting for it
+        pinWithLimit(cid);
+      }
+      
+      // Wait for remaining pins to complete
+      if (activePromises.size > 0) {
+        await Promise.allSettled(activePromises);
       }
       
       // Clean up expired pins
