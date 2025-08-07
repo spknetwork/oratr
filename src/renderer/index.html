@@ -28,8 +28,8 @@
                 <button class="tab" onclick="showTab('upload')">Video Upload</button>
                 <button class="tab" onclick="showTab('balance')">Wallet</button>
                 <button class="tab" onclick="showTab('storage')" id="storage-tab-button">
-                    <span class="status-indicator"></span>
                     Storage Node
+                    <span class="status-indicator"></span>
                 </button>
             </div>
 
@@ -250,7 +250,7 @@
                                 <p>Status: <span id="ipfs-status">Stopped</span></p>
                                 <div class="step-actions">
                                     <button onclick="saveIPFSConfig()" class="btn btn-secondary">Save Configuration</button>
-                                    <button onclick="toggleIPFS()" id="ipfs-toggle" class="btn btn-primary">Start IPFS</button>
+                                    <button onclick="toggleIPFS()" id="ipfs-toggle" class="btn btn-primary">Have Oratr run IPFS</button>
                                 </div>
                             </div>
                             
@@ -404,7 +404,7 @@
                                 </div>
                                 <div class="stat-item">
                                     <span class="stat-label">IPFS Peers:</span>
-                                    <span class="stat-value" id="ipfs-peers-dashboard">0</span>
+                                    <span class="stat-value" id="ipfs-peers">0</span>
                                 </div>
                                 <div class="stat-item">
                                     <span class="stat-label">Version:</span>
@@ -422,7 +422,8 @@
                     </div>
                     
                     <div class="dashboard-actions">
-                        <button onclick="checkContractsNow()" class="btn btn-primary">Check Contracts Now</button>
+                        <button onclick="viewContracts()" class="btn btn-primary">View Active Contracts</button>
+                        <button onclick="checkContractsNow()" class="btn btn-secondary">Check Contracts Now</button>
                         <button onclick="viewPinnedCIDs()" class="btn btn-secondary">View Pinned Files</button>
                         <button onclick="viewFullLogs()" class="btn btn-secondary">View Full Logs</button>
                         <button onclick="openNetworkBrowser()" class="btn btn-secondary">Browse Network Files</button>

@@ -14,7 +14,7 @@
     "test:e2e": "cross-env NODE_OPTIONS=\"--experimental-vm-modules\" jest --testPathPattern=test/e2e --runInBand",
     "lint": "eslint src test --ext .js",
     "lint:fix": "eslint src test --ext .js --fix",
-    "prebuild": "node build/download-binaries.js",
+    "prebuild": "node build/download-binaries.js && node build/download-ipfs.js",
     "build": "electron-builder",
     "build:win": "npm run prebuild && electron-builder --win --publish=never",
     "build:mac": "npm run prebuild && electron-builder --mac --publish=never",

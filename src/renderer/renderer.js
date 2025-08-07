@@ -1808,7 +1808,8 @@ async function saveIPFSConfig() {
         config.dataPath = document.getElementById('ipfs-data-path').value;
     }
     
-    const result = await window.api.storage.updateIPFSConfig(config);
+    // Persist config to IPFS manager (and settings via main process)
+    const result = await window.api.ipfs.updateConfig(config);
     if (result.success) {
         showNotification('IPFS configuration saved!', 'success');
         // Update disk space display
@@ -1853,7 +1854,7 @@ async function refreshIPFSInfo() {
 
 async function toggleIPFS() {
     if (ipfsRunning) {
-        await window.api.storage.stopIPFS();
+        await window.api.ipfs.stop();
         ipfsRunning = false;
         document.getElementById('ipfs-status').textContent = 'Stopped';
         document.getElementById('ipfs-toggle').textContent = 'Start IPFS';
@@ -1864,12 +1865,22 @@ async function toggleIPFS() {
         if (nextBtn) nextBtn.style.display = 'none';
     } else {
         try {
-            await window.api.storage.startIPFS();
+            await window.api.ipfs.start();
             ipfsRunning = true;
             document.getElementById('ipfs-status').textContent = 'Running';
             document.getElementById('ipfs-toggle').textContent = 'Stop IPFS';
             document.getElementById('ipfs-info').style.display = 'block';
             await updateIPFSInfo();
+
+            // Ensure PubSub is enabled for POA
+            try {
+                const pubsub = await window.api.ipfs.checkPubSub();
+                if (!pubsub.enabled) {
+                    showPubSubPrompt();
+                }
+            } catch (e) {
+                console.warn('PubSub check failed:', e);
+            }
             
             // Show next button when IPFS is running
             const nextBtn = document.getElementById('ipfs-info').querySelector('.btn-primary');

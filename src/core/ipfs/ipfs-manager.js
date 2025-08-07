@@ -28,6 +28,7 @@ class IPFSManager extends EventEmitter {
     this.running = false;
     this.daemonProcess = null;
     this.isExternalNode = this.config.externalNode;
+    this.ipfsBinaryPath = null;
     
     // Storage monitoring
     this.storageMonitorInterval = null;
@@ -36,6 +37,55 @@ class IPFSManager extends EventEmitter {
     // Lazy load ES modules
     this.kuboModule = null;
     this.hashModule = null;
+  }
+
+  /**
+   * Resolve the IPFS (Kubo) binary path bundled with the app or fallback to system binary
+   */
+  resolveIpfsBinary() {
+    if (this.ipfsBinaryPath) return this.ipfsBinaryPath;
+
+    // 1) Environment override
+    if (process.env.ORATR_IPFS_PATH) {
+      this.ipfsBinaryPath = process.env.ORATR_IPFS_PATH;
+      return this.ipfsBinaryPath;
+    }
+
+    // 2) Packaged app resources (electron asar unpacked extraResources)
+    try {
+      const fsSync = require('fs');
+      const path = require('path');
+      const resourcesPath = process.resourcesPath || path.join(__dirname, '../../../');
+      const binDir = path.join(resourcesPath, 'bin');
+
+      const platform = process.platform; // 'win32' | 'darwin' | 'linux'
+      const arch = process.arch; // 'x64', 'arm64', etc
+
+      const candidates = [];
+      // Common names we might ship
+      if (platform === 'win32') {
+        candidates.push('ipfs.exe', 'kubo.exe', 'ipfs-windows-amd64.exe');
+      } else if (platform === 'darwin') {
+        candidates.push('ipfs', 'kubo', 'ipfs-darwin-amd64', 'ipfs-darwin-arm64');
+      } else {
+        // linux
+        candidates.push('ipfs', 'kubo', 'ipfs-linux-amd64', 'ipfs-linux-arm64');
+      }
+
+      for (const name of candidates) {
+        const full = path.join(binDir, name);
+        if (fsSync.existsSync(full)) {
+          this.ipfsBinaryPath = full;
+          return this.ipfsBinaryPath;
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    // 3) Fallback to system 'ipfs'
+    this.ipfsBinaryPath = 'ipfs';
+    return this.ipfsBinaryPath;
   }
 
   /**
@@ -100,7 +150,7 @@ class IPFSManager extends EventEmitter {
     } catch (error) {
       // Initialize new repo
       return new Promise((resolve, reject) => {
-        const init = spawn('ipfs', ['init', '--profile', 'server'], {
+        const init = spawn(this.resolveIpfsBinary(), ['init', '--profile', 'server'], {
           env: { ...process.env, IPFS_PATH: this.config.dataPath }
         });
 
@@ -127,6 +177,9 @@ class IPFSManager extends EventEmitter {
       ['config', '--json', 'API.HTTPHeaders.Access-Control-Allow-Headers', '["Authorization"]'],
       ['config', '--json', 'API.HTTPHeaders.Access-Control-Expose-Headers', '["Location"]'],
       ['config', '--json', 'API.HTTPHeaders.Access-Control-Allow-Credentials', '["true"]'],
+      // Ensure PubSub is enabled for POA (internal node)
+      ['config', '--json', 'Pubsub.Enabled', 'true'],
+      ['config', '--json', 'Pubsub.Router', '"gossipsub"'],
       // Add default IPFS bootstrap peers for peer connectivity
       ['bootstrap', 'add', '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN'],
       ['bootstrap', 'add', '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa'],
@@ -136,7 +189,7 @@ class IPFSManager extends EventEmitter {
 
     for (const cmd of commands) {
       await new Promise((resolve, reject) => {
-        const proc = spawn('ipfs', cmd, {
+        const proc = spawn(this.resolveIpfsBinary(), cmd, {
           env: { ...process.env, IPFS_PATH: this.config.dataPath }
         });
         proc.on('close', (code) => {
@@ -166,7 +219,7 @@ class IPFSManager extends EventEmitter {
     await this.initRepo();
 
     return new Promise((resolve, reject) => {
-      this.daemonProcess = spawn('ipfs', ['daemon', '--enable-pubsub-experiment', '--enable-gc'], {
+      this.daemonProcess = spawn(this.resolveIpfsBinary(), ['daemon', '--enable-gc'], {
         env: { ...process.env, IPFS_PATH: this.config.dataPath },
         detached: this.config.daemon // Allow daemon to run independently
       });
@@ -748,8 +801,8 @@ class IPFSManager extends EventEmitter {
    */
   async enablePubSub() {
     try {
-      // For external nodes
-      if (this.mode === 'external' && this.client) {
+      // For external nodes, try API config
+      if (this.isExternalNode && this.client) {
         // Try to enable PubSub via API
         const url = `http://${this.config.host}:${this.config.port}/api/v0/config`;
         const response = await fetch(url, {
@@ -762,6 +815,14 @@ class IPFSManager extends EventEmitter {
         });
         
         if (response.ok) {
+          // Also set router
+          await fetch(`http://${this.config.host}:${this.config.port}/api/v0/config`, {
+            method: 'POST',
+            body: new URLSearchParams({
+              arg: 'Pubsub.Router',
+              arg: 'gossipsub'
+            })
+          }).catch(() => {});
           this.emit('log', 'PubSub enabled successfully');
           return { success: true };
         } else {
@@ -772,11 +833,21 @@ class IPFSManager extends EventEmitter {
         }
       }
       
-      // For internal nodes
-      if (this.mode === 'internal') {
-        // Update config before starting
-        this.config.pubsub = true;
-        return { success: true };
+      // For internal nodes, write config via CLI
+      if (!this.isExternalNode) {
+        const run = (args) => new Promise((resolve, reject) => {
+          const p = spawn(this.resolveIpfsBinary(), args, { env: { ...process.env, IPFS_PATH: this.config.dataPath } });
+          p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ipfs ${args.join(' ')} failed`)));
+          p.on('error', reject);
+        });
+        try {
+          await run(['config', '--json', 'Pubsub.Enabled', 'true']);
+          await run(['config', '--json', 'Pubsub.Router', '"gossipsub"']);
+          this.emit('log', 'PubSub enabled in local config');
+          return { success: true };
+        } catch (e) {
+          return { success: false, error: e.message };
+        }
       }
       
       return { success: false, error: 'No IPFS node configured' };
@@ -801,7 +872,9 @@ class IPFSManager extends EventEmitter {
       
       if (response.ok) {
         const config = await response.json();
-        return config.Pubsub?.Enabled === true;
+        const enabled = config.Pubsub?.Enabled === true;
+        const router = config.Pubsub?.Router || config.Pubsub?.RouterName;
+        return enabled && (!!router ? String(router).toLowerCase().includes('gossip') : true);
       }
       
       return false;

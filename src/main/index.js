@@ -238,7 +238,16 @@ async function initializeServices() {
   // Initialize core services
   services.transcoder = new Transcoder();
   services.playlistProcessor = new PlaylistProcessor();
-  services.ipfsManager = new IPFSManager();
+  // Initialize IPFS with persisted settings
+  const saved = services.settingsManager.getSettings();
+  services.ipfsManager = new IPFSManager({
+    host: saved.ipfsHost || '127.0.0.1',
+    port: saved.ipfsPort || 5001,
+    dataPath: saved.ipfsDataPath,
+    externalNode: (saved.ipfsMode === 'external'),
+    daemon: (saved.ipfsMode !== 'external'),
+    maxStorage: (saved.maxStorageGB || 100) * 1024 * 1024 * 1024
+  });
   services.storageNode = new POAStorageNode();
   services.storageNodeManager = new StorageNodeManager(services.spkClient, {
     node: networkSettings.spkNode,
@@ -720,6 +729,16 @@ function setupIPCHandlers() {
   ipcMain.handle('ipfs:updateConfig', async (event, config) => {
     try {
       await services.ipfsManager.updateConfig(config);
+      // Persist to settings
+      const updates = {};
+      if (typeof config.host !== 'undefined') updates.ipfsHost = config.host;
+      if (typeof config.port !== 'undefined') updates.ipfsPort = config.port;
+      if (typeof config.dataPath !== 'undefined') updates.ipfsDataPath = config.dataPath;
+      if (typeof config.externalNode !== 'undefined') updates.ipfsMode = config.externalNode ? 'external' : 'internal';
+      if (typeof config.maxStorage !== 'undefined') updates.maxStorageGB = Math.floor((config.maxStorage || 0) / (1024*1024*1024));
+      if (Object.keys(updates).length) {
+        await services.settingsManager.updateSettings(updates);
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
