@@ -2144,11 +2144,57 @@ async function updateStorageDashboard() {
 // New function to update pinned files information
 async function updatePinnedFilesInfo() {
     try {
-        // Get stored contracts with file details
-        const contracts = await window.api.spk.getStoredContracts();
+        // Get the current username from multiple sources
+        let username = null;
+        try {
+            const poaConfig = await window.api.poa.getConfig();
+            if (poaConfig && poaConfig.account) {
+                username = poaConfig.account;
+            }
+        } catch (e) {
+            console.error('Could not get poa config', e);
+        }
         
-        // Get actual pinned CIDs from IPFS
-        const pinnedCIDs = await window.api.contracts?.getPinnedCIDs?.() || [];
+        // Fallback to currentAccount if POA config didn't work
+        if (!username && window.currentAccount) {
+            username = window.currentAccount;
+        }
+        
+        if (!username) {
+            console.log('No username available for fetching contracts');
+            return;
+        }
+        
+        // Fetch stored contracts from the API
+        let contracts = [];
+        try {
+            const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
+            if (contractsResponse.ok) {
+                const contractsData = await contractsResponse.json();
+                // Handle the actual API response format
+                contracts = contractsData.contractsStoring || contractsData.contracts || [];
+                console.log(`Fetched ${contracts.length} stored contracts for ${username}`);
+            }
+        } catch (error) {
+            console.error('Failed to fetch contracts:', error);
+        }
+        
+        // Get actual pinned CIDs from IPFS directly
+        let pinnedCIDs = [];
+        try {
+            const pinResponse = await fetch('http://127.0.0.1:5001/api/v0/pin/ls?type=recursive', {
+                method: 'POST'
+            });
+            
+            if (pinResponse.ok) {
+                const pinData = await pinResponse.json();
+                pinnedCIDs = Object.keys(pinData.Keys || {});
+            }
+        } catch (error) {
+            console.error('Failed to get pinned CIDs:', error);
+            // Fallback to API method if direct IPFS fails
+            pinnedCIDs = await window.api.contracts?.getPinnedCIDs?.() || [];
+        }
         
         // Calculate statistics
         let totalFiles = 0;
@@ -2157,31 +2203,17 @@ async function updatePinnedFilesInfo() {
         const pinnedSet = new Set(pinnedCIDs);
         const requiredCIDs = new Set();
         
-        // Extract all CIDs that should be pinned from contracts
+        // For stored contracts, we only need to pin the contract ID itself
         contracts.forEach(contract => {
-            if (contract.cid) {
-                requiredCIDs.add(contract.cid);
+            const cid = contract.id || contract.cid;
+            if (cid) {
+                requiredCIDs.add(cid);
                 totalFiles++;
-                totalSize += contract.size || 0;
+                totalSize += contract.utilized || contract.size || 0;
                 
-                if (!pinnedSet.has(contract.cid)) {
+                if (!pinnedSet.has(cid)) {
                     missingFiles++;
                 }
-            }
-            
-            // Check files array if present
-            if (contract.files && Array.isArray(contract.files)) {
-                contract.files.forEach(file => {
-                    if (file.cid) {
-                        requiredCIDs.add(file.cid);
-                        totalFiles++;
-                        totalSize += file.size || 0;
-                        
-                        if (!pinnedSet.has(file.cid)) {
-                            missingFiles++;
-                        }
-                    }
-                });
             }
         });
         
@@ -3324,12 +3356,25 @@ async function checkContractsNow() {
 // Quiet sync function for auto-sync (no notifications unless there's an error)
 async function syncMissingFilesQuietly() {
     try {
-        // Get the current username
-        const poaConfig = await window.api.poa.getConfig();
-        if (!poaConfig || !poaConfig.account) {
-            return; // Silently skip if not configured
+        // Get the current username from multiple sources
+        let username = null;
+        try {
+            const poaConfig = await window.api.poa.getConfig();
+            if (poaConfig && poaConfig.account) {
+                username = poaConfig.account;
+            }
+        } catch (e) {
+            console.error('Could not get poa config', e);
         }
-        const username = poaConfig.account;
+        
+        // Fallback to currentAccount if POA config didn't work
+        if (!username && window.currentAccount) {
+            username = window.currentAccount;
+        }
+        
+        if (!username) {
+            return; // Silently skip if no username available
+        }
         
         // Fetch stored contracts from the API
         const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
@@ -3339,7 +3384,8 @@ async function syncMissingFilesQuietly() {
         }
         
         const contractsData = await contractsResponse.json();
-        const storedContracts = contractsData.contracts || contractsData || [];
+        // Handle the actual API response format
+        const storedContracts = contractsData.contractsStoring || contractsData.contracts || [];
         
         // Get currently pinned files from IPFS
         const pinResponse = await fetch('http://127.0.0.1:5001/api/v0/pin/ls?type=recursive', {
@@ -3396,13 +3442,26 @@ async function syncMissingFiles() {
     try {
         showNotification('Starting file sync...', 'info');
         
-        // Get the current username
-        const poaConfig = await window.api.poa.getConfig();
-        if (!poaConfig || !poaConfig.account) {
-            showNotification('PoA not configured. Please configure your storage node first.', 'error');
+        // Get the current username from multiple sources
+        let username = null;
+        try {
+            const poaConfig = await window.api.poa.getConfig();
+            if (poaConfig && poaConfig.account) {
+                username = poaConfig.account;
+            }
+        } catch (e) {
+            console.error('Could not get poa config', e);
+        }
+        
+        // Fallback to currentAccount if POA config didn't work
+        if (!username && window.currentAccount) {
+            username = window.currentAccount;
+        }
+        
+        if (!username) {
+            showNotification('No account found. Please log in first.', 'error');
             return;
         }
-        const username = poaConfig.account;
         
         // Fetch stored contracts from the API
         const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
@@ -3411,7 +3470,8 @@ async function syncMissingFiles() {
         }
         
         const contractsData = await contractsResponse.json();
-        const storedContracts = contractsData.contracts || contractsData || [];
+        // Handle the actual API response format
+        const storedContracts = contractsData.contractsStoring || contractsData.contracts || [];
         
         // Get currently pinned files from IPFS
         const pinResponse = await fetch('http://127.0.0.1:5001/api/v0/pin/ls?type=recursive', {

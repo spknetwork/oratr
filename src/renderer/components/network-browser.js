@@ -15,13 +15,21 @@ class NetworkBrowser {
     }
     
     async init() {
+        // Try to get username from multiple sources
         try {
+            // First try POA config
             const poaConfig = await window.api.poa.getConfig();
             if (poaConfig && poaConfig.account) {
                 this.username = poaConfig.account;
             }
         } catch (e) {
             console.error('Could not get poa config', e);
+        }
+        
+        // Fallback to current account if POA config didn't work
+        if (!this.username && window.currentAccount) {
+            this.username = window.currentAccount;
+            console.log('Using currentAccount as username:', this.username);
         }
 
         this.render();
@@ -123,9 +131,19 @@ class NetworkBrowser {
         const removeBtn = document.getElementById('remove-selected-btn');
 
         if(view === 'stored') {
-            const poaConfig = await window.api.poa.getConfig();
-            if (poaConfig && poaConfig.account) {
-                this.username = poaConfig.account;
+            // Try to get username from multiple sources
+            try {
+                const poaConfig = await window.api.poa.getConfig();
+                if (poaConfig && poaConfig.account) {
+                    this.username = poaConfig.account;
+                }
+            } catch (e) {
+                console.error('Could not get poa config', e);
+            }
+            
+            // Fallback to current account if POA config didn't work
+            if (!this.username && window.currentAccount) {
+                this.username = window.currentAccount;
             }
             storeBtn.style.display = 'none';
             removeBtn.style.display = 'inline-block';
@@ -164,7 +182,43 @@ class NetworkBrowser {
             }
             
             const data = await response.json();
-            const opportunities = data.contracts || data || [];
+            let opportunities = data.contracts || data || [];
+            
+            // Filter out contracts that the user is already storing
+            if (this.username) {
+                console.log('Filtering contracts for user:', this.username);
+                try {
+                    const storedResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${this.username}`);
+                    if (storedResponse.ok) {
+                        const storedData = await storedResponse.json();
+                        console.log('Stored-by response for filtering:', storedData);
+                        
+                        // Handle the actual API response format
+                        const storedContracts = storedData.contractsStoring || storedData.contracts || [];
+                        
+                        if (Array.isArray(storedContracts) && storedContracts.length > 0) {
+                            const storedIds = new Set(storedContracts.map(c => c.id));
+                            
+                            console.log('User is storing contracts:', Array.from(storedIds));
+                            console.log('Total opportunities before filter:', opportunities.length);
+                            
+                            // Filter out contracts we're already storing
+                            opportunities = opportunities.filter(opp => !storedIds.has(opp.id));
+                            console.log(`Filtered out ${storedIds.size} contracts already being stored`);
+                            console.log('Opportunities after filter:', opportunities.length);
+                        } else {
+                            console.log('User has no stored contracts');
+                        }
+                    } else {
+                        console.error('Failed to fetch stored contracts:', storedResponse.status, storedResponse.statusText);
+                    }
+                } catch (filterError) {
+                    console.error('Error filtering stored contracts:', filterError);
+                    // Continue with unfiltered list
+                }
+            } else {
+                console.log('No username available, showing all opportunities');
+            }
             
             console.log('Loaded storage opportunities:', opportunities);
             
@@ -178,19 +232,30 @@ class NetworkBrowser {
     async loadStoredFiles() {
         this.showLoading();
         if (!this.username) {
-            this.showError('PoA username not found. Please make sure your storage node is configured and running.');
+            this.showError('No username found. Please make sure you are logged in.');
             return;
         }
 
         try {
+            console.log('Loading stored files for:', this.username);
             const response = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${this.username}`);
             if(!response.ok) {
                 throw new Error(`API returned ${response.status}: ${response.statusText}`);
             }
 
             const data = await response.json();
-            const storedFiles = data.contracts || data || [];
+            console.log('Stored-by API response:', data);
+            
+            // Handle the actual API response format
+            const storedFiles = data.contractsStoring || data.contracts || [];
             console.log('Loaded stored files:', storedFiles);
+
+            // Make sure we have an array
+            if (!Array.isArray(storedFiles)) {
+                console.error('Stored files is not an array:', storedFiles);
+                this.renderFiles([]);
+                return;
+            }
 
             this.renderFiles(storedFiles);
         } catch (error) {
@@ -386,19 +451,16 @@ class NetworkBrowser {
         }
     }
     
-    async storeContract(contractId) {
-        try {
-            const result = await this.storageManager.storeFiles([contractId]);
-            alert('Contract stored successfully!');
-            await this.refresh();
-        } catch (error) {
-            console.error('Failed to store contract:', error);
-            alert(`Failed to store contract: ${error.message}`);
-        }
-    }
-
     async removeContract(contractId) {
         try {
+            console.log('Removing contract:', contractId);
+            
+            // Check if window.api is available
+            if (!window.api?.spk) {
+                alert('SPK API not available. Please ensure you are logged in.');
+                return;
+            }
+            
             const response = await window.api.spk.removeFiles([contractId]);
             if(response.success) {
                 alert('Contract removed successfully');
