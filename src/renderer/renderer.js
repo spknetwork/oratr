@@ -2039,8 +2039,13 @@ async function startStorageNode() {
 
 async function updateStorageDashboard() {
     console.log('[DEBUG] updateStorageDashboard called');
-    // Just use our state-based update
+    
+    // Update the state-based fields (status, version, etc)
     await updateDashboardFromState();
+    
+    // Update the storage statistics from stored-by API
+    await updatePinnedFilesInfo();
+    
     return;
     
     // OLD CODE BELOW - KEEPING FOR REFERENCE BUT NOT EXECUTING
@@ -2162,6 +2167,26 @@ async function updatePinnedFilesInfo() {
         
         if (!username) {
             console.log('No username available for fetching contracts');
+            // Set default values when no username
+            const contractsEl = document.getElementById('storage-contracts');
+            if (contractsEl) contractsEl.textContent = '0';
+            
+            const filesStoredEl = document.getElementById('storage-files');
+            if (filesStoredEl) filesStoredEl.textContent = '0';
+            
+            const spaceUsedEl = document.getElementById('storage-used');
+            if (spaceUsedEl) spaceUsedEl.textContent = '0 Bytes';
+            
+            const spaceAvailableEl = document.getElementById('storage-available');
+            if (spaceAvailableEl) spaceAvailableEl.textContent = '0 Bytes';
+            
+            // Update detailed stats to zeros
+            if (document.getElementById('total-required-files')) {
+                document.getElementById('total-required-files').textContent = '0';
+                document.getElementById('currently-pinned-files').textContent = '0';
+                document.getElementById('missing-files').textContent = '0';
+                document.getElementById('pinned-total-size').textContent = '0 B';
+            }
             return;
         }
         
@@ -2169,15 +2194,24 @@ async function updatePinnedFilesInfo() {
         let contracts = [];
         let apiData = null;
         try {
+            console.log(`Fetching contracts for username: ${username}`);
             const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
             if (contractsResponse.ok) {
                 apiData = await contractsResponse.json();
+                console.log('Stored-by API response:', apiData);
                 contracts = apiData.contractsStoring || apiData.contracts || [];
                 console.log(`Fetched ${contracts.length} stored contracts for ${username}`);
+                if (contracts.length > 0) {
+                    console.log('First contract example:', contracts[0]);
+                }
+            } else {
+                console.error(`API error: ${contractsResponse.status} ${contractsResponse.statusText}`);
             }
         } catch (error) {
             console.error('Failed to fetch contracts:', error);
-            return;
+            // Don't clear the dashboard on error - just use empty contracts array
+            contracts = [];
+            // Don't return - continue to show what we can
         }
         
         // Get actual pinned CIDs from IPFS directly
@@ -2217,38 +2251,51 @@ async function updatePinnedFilesInfo() {
             const fileCount = contract.fileCount || (contract.files ? contract.files.length : 1);
             totalFiles += fileCount;
             
-            // Check if contract ID is pinned (main requirement for storage nodes)
-            const contractId = contract.id;
-            if (contractId) {
-                requiredCIDs.add(contractId);
-                if (pinnedSet.has(contractId)) {
-                    pinnedCount++;
-                } else {
-                    missingPins.push(contractId);
-                }
-            }
+            // Check if all files in this contract are pinned
+            let contractFullyPinned = true;
             
-            // Also check individual files if they exist (optional but good to track)
+            // For storage nodes, we need to pin the actual file CIDs from the contract
             if (contract.files && Array.isArray(contract.files)) {
+                // Check each file CID in the contract
                 contract.files.forEach(file => {
-                    if (file.cid && file.cid !== contractId) {
-                        // These are additional files, not strictly required but good to have
+                    if (file.cid) {
                         requiredCIDs.add(file.cid);
                         if (!pinnedSet.has(file.cid)) {
-                            // Note: We don't count these as missing for storage node purposes
-                            console.log(`Optional file not pinned: ${file.cid}`);
+                            contractFullyPinned = false;
+                            missingPins.push(file.cid);
+                            console.log(`Missing pin for file: ${file.cid} (size: ${file.size}) from contract ${contract.id}`);
                         }
                     }
                 });
+                
+                // Count this contract as pinned only if ALL its files are pinned
+                if (contractFullyPinned) {
+                    pinnedCount++;
+                }
+            } else {
+                // Fallback: if no files array, we can't verify
+                console.warn(`Contract ${contract.id} has no files array`);
             }
         });
         
         const missingCount = missingPins.length;
         
+        console.log('Dashboard Stats:', {
+            activeContracts,
+            totalFiles,
+            totalSize,
+            pinnedCount,
+            missingCount,
+            missingPins
+        });
+        
         // Update main dashboard stats
         const contractsEl = document.getElementById('storage-contracts');
         if (contractsEl) {
             contractsEl.textContent = activeContracts;
+            console.log('Updated contracts element to:', activeContracts);
+        } else {
+            console.error('Could not find storage-contracts element');
         }
         
         const filesStoredEl = document.getElementById('storage-files');
@@ -2263,11 +2310,39 @@ async function updatePinnedFilesInfo() {
                     </div>
                 </div>
             `;
+            console.log('Updated files element');
+        } else {
+            console.error('Could not find storage-files element');
         }
         
-        const spaceUsedEl = document.getElementById('storage-space');
+        const spaceUsedEl = document.getElementById('storage-used');
         if (spaceUsedEl) {
             spaceUsedEl.textContent = formatBytes(totalSize);
+            console.log('Updated space used element to:', formatBytes(totalSize));
+        } else {
+            console.error('Could not find storage-used element');
+        }
+        
+        // For Space Available, we need to get IPFS repo stats
+        try {
+            const repoStatResponse = await fetch('http://127.0.0.1:5001/api/v0/repo/stat', {
+                method: 'POST'
+            });
+            
+            if (repoStatResponse.ok) {
+                const repoStat = await repoStatResponse.json();
+                const storageMax = repoStat.StorageMax || 0;
+                const repoSize = repoStat.RepoSize || 0;
+                const available = storageMax - repoSize;
+                
+                const spaceAvailableEl = document.getElementById('storage-available');
+                if (spaceAvailableEl) {
+                    spaceAvailableEl.textContent = formatBytes(available > 0 ? available : 0);
+                    console.log('Updated space available to:', formatBytes(available));
+                }
+            }
+        } catch (error) {
+            console.error('Failed to get IPFS repo stats:', error);
         }
         
         // Add a detailed section if it doesn't exist
@@ -2289,8 +2364,8 @@ async function updatePinnedFilesInfo() {
                             <div class="stat-value" id="currently-pinned-files">0</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-label">Missing Pins</div>
-                            <div class="stat-value" id="missing-files">0</div>
+                            <div class="stat-label">Missing Files</div>
+                            <div class="stat-value" id="missing-files" style="color: #ff6b6b;">0</div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-label">Total Size</div>
@@ -2299,7 +2374,7 @@ async function updatePinnedFilesInfo() {
                     </div>
                     <div style="margin-top: 10px;">
                         <button onclick="viewPinnedCIDs()" class="btn btn-sm">View All Pinned CIDs</button>
-                        <button onclick="syncMissingFiles()" class="btn btn-sm" ${missingFiles === 0 ? 'disabled' : ''}>
+                        <button onclick="syncMissingFiles()" class="btn btn-sm" id="sync-missing-btn">
                             Sync Missing Files
                         </button>
                     </div>
@@ -2312,13 +2387,26 @@ async function updatePinnedFilesInfo() {
         if (document.getElementById('total-required-files')) {
             document.getElementById('total-required-files').textContent = activeContracts;
             document.getElementById('currently-pinned-files').textContent = pinnedCount;
-            document.getElementById('missing-files').textContent = missingCount;
+            
+            const missingFilesEl = document.getElementById('missing-files');
+            if (missingFilesEl) {
+                missingFilesEl.textContent = missingCount;
+                missingFilesEl.style.color = missingCount > 0 ? '#ff6b6b' : '#51cf66';
+            }
+            
             document.getElementById('pinned-total-size').textContent = formatBytes(totalSize);
             
             // Update sync button state
-            const syncBtn = document.querySelector('button[onclick="syncMissingFiles()"]');
+            const syncBtn = document.getElementById('sync-missing-btn');
             if (syncBtn) {
                 syncBtn.disabled = missingCount === 0;
+                if (missingCount > 0) {
+                    syncBtn.textContent = `Sync ${missingCount} Missing Files`;
+                    syncBtn.style.backgroundColor = '#ff6b6b';
+                } else {
+                    syncBtn.textContent = 'All Synced';
+                    syncBtn.style.backgroundColor = '#51cf66';
+                }
             }
         }
         
@@ -3446,8 +3534,17 @@ async function syncMissingFilesQuietly() {
         const pinData = await pinResponse.json();
         const pinnedCIDs = new Set(Object.keys(pinData.Keys || {}));
         
-        // Find missing CIDs - only look at the contract IDs themselves
-        const requiredCIDs = storedContracts.map(c => c.id).filter(id => id);
+        // Find missing CIDs - get the actual file CIDs from contracts
+        const requiredCIDs = [];
+        storedContracts.forEach(contract => {
+            if (contract.files && Array.isArray(contract.files)) {
+                contract.files.forEach(file => {
+                    if (file.cid) {
+                        requiredCIDs.push(file.cid);
+                    }
+                });
+            }
+        });
         const missingCIDs = requiredCIDs.filter(cid => !pinnedCIDs.has(cid));
         
         if (missingCIDs.length === 0) {
@@ -3459,16 +3556,27 @@ async function syncMissingFilesQuietly() {
         
         for (const cid of missingCIDs) {
             try {
-                const pinAddResponse = await fetch(`http://127.0.0.1:5001/api/v0/pin/add?arg=${cid}&progress=false`, {
-                    method: 'POST'
+                // Add a timeout to prevent hanging
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                
+                const pinAddResponse = await fetch(`http://127.0.0.1:5001/api/v0/pin/add?arg=${cid}&recursive=true&progress=false`, {
+                    method: 'POST',
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeout);
                 
                 if (pinAddResponse.ok) {
                     pinnedCount++;
                     console.log(`Auto-synced: ${cid}`);
                 }
             } catch (error) {
-                console.error(`Error auto-pinning ${cid}:`, error);
+                if (error.name === 'AbortError') {
+                    console.log(`Timeout auto-pinning ${cid} - will retry later`);
+                } else {
+                    console.error(`Error auto-pinning ${cid}:`, error);
+                }
             }
         }
         
@@ -3546,7 +3654,8 @@ async function syncMissingFiles() {
             return;
         }
         
-        showNotification(`Pinning ${missingCIDs.length} missing contracts...`, 'info');
+        showNotification(`Pinning ${missingCIDs.length} missing files...`, 'info');
+        console.log('Missing CIDs to pin:', missingCIDs);
         
         // Pin missing files
         let pinnedCount = 0;
@@ -3554,30 +3663,45 @@ async function syncMissingFiles() {
         
         for (const cid of missingCIDs) {
             try {
-                const pinAddResponse = await fetch(`http://127.0.0.1:5001/api/v0/pin/add?arg=${cid}&progress=false`, {
-                    method: 'POST'
+                console.log(`Attempting to pin: ${cid}`);
+                
+                // Add a timeout to prevent hanging
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                
+                const pinAddResponse = await fetch(`http://127.0.0.1:5001/api/v0/pin/add?arg=${cid}&recursive=true&progress=false`, {
+                    method: 'POST',
+                    signal: controller.signal
                 });
                 
+                clearTimeout(timeout);
+                
                 if (pinAddResponse.ok) {
+                    const result = await pinAddResponse.json();
                     pinnedCount++;
-                    console.log(`Successfully pinned: ${cid}`);
+                    console.log(`Successfully pinned: ${cid}`, result);
                 } else {
+                    const errorText = await pinAddResponse.text();
                     failedCount++;
-                    console.error(`Failed to pin ${cid}: ${pinAddResponse.statusText}`);
+                    console.error(`Failed to pin ${cid}: ${pinAddResponse.status} ${errorText}`);
                 }
             } catch (error) {
                 failedCount++;
-                console.error(`Error pinning ${cid}:`, error);
+                if (error.name === 'AbortError') {
+                    console.error(`Timeout pinning ${cid} - file may be unavailable on network`);
+                } else {
+                    console.error(`Error pinning ${cid}:`, error);
+                }
             }
         }
         
         // Show results
         if (pinnedCount > 0 && failedCount === 0) {
-            showNotification(`Sync complete: ${pinnedCount} contracts pinned successfully`, 'success');
+            showNotification(`Sync complete: ${pinnedCount} files pinned successfully`, 'success');
         } else if (pinnedCount > 0) {
-            showNotification(`Sync partial: ${pinnedCount} pinned, ${failedCount} failed`, 'warning');
+            showNotification(`Sync partial: ${pinnedCount} files pinned, ${failedCount} failed`, 'warning');
         } else {
-            showNotification(`Sync failed: Could not pin any contracts`, 'error');
+            showNotification(`Sync failed: Could not pin any files`, 'error');
         }
         
         // Clear the cache and refresh
@@ -4656,7 +4780,9 @@ async function updateDashboardFromState() {
     // Update tab indicator
     updateStorageTabIndicator(storageDashboardState.running);
     
-    // Update storage stats from API
+    // Don't update storage stats here - we get them from updatePinnedFilesInfo()
+    // This was overwriting our good data with zeros
+    /*
     try {
         const stats = await window.api.storage.getStats();
         if (stats) {
@@ -4668,6 +4794,7 @@ async function updateDashboardFromState() {
     } catch (error) {
         console.log('Could not get storage stats:', error);
     }
+    */
 }
 
 // Handle storage logs
