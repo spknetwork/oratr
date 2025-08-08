@@ -400,6 +400,13 @@ class AuthComponent {
     document.getElementById('import-master-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       
+      // Require unlocked wallet before importing
+      if (!this.isUnlocked) {
+        const errorDiv = document.getElementById('error-message');
+        errorDiv.textContent = 'Please unlock your wallet before importing an account.';
+        return;
+      }
+
       const username = document.getElementById('username').value;
       const masterPassword = document.getElementById('master-password').value;
       const errorDiv = document.getElementById('error-message');
@@ -444,7 +451,15 @@ class AuthComponent {
           }
         }, 1500);
       } else {
-        errorDiv.textContent = result.error || 'Failed to import account';
+        // Surface clearer guidance for common causes
+        const err = (result && result.error) ? String(result.error) : '';
+        if (err.toLowerCase().includes('locked')) {
+          errorDiv.textContent = 'Wallet is locked. Please unlock first.';
+        } else if (err.toLowerCase().includes('derive')) {
+          errorDiv.textContent = 'Could not derive keys. Check the username and master password.';
+        } else {
+          errorDiv.textContent = result.error || 'Failed to import account';
+        }
       }
     });
 

@@ -2268,7 +2268,9 @@ async function updatePinnedFilesInfo() {
         // Calculate comprehensive statistics from stored-by API
         let activeContracts = 0;
         let totalFiles = 0;
-        let totalSize = 0;
+        let totalSize = 0; // sum of reported contract sizes (fallback)
+        let totalUtilized = 0; // sum of contract.utilized if present
+        let contractsTotalBytes = 0; // display: sum of contracts stored on this node
         let missingPins = [];
         let pinnedCount = 0;
         const pinnedSet = new Set(pinnedCIDs);
@@ -2279,9 +2281,15 @@ async function updatePinnedFilesInfo() {
             // Count active contracts
             activeContracts++;
             
-            // Calculate total size from contract
-            const contractSize = contract.totalSize || contract.utilized || contract.size || 0;
+            // Track sizes by precedence: utilized is the most accurate per-node value
+            if (typeof contract.utilized === 'number') {
+                totalUtilized += contract.utilized;
+            }
+            const contractSize = contract.totalSize || contract.size || contract.utilized || 0;
             totalSize += contractSize;
+
+            // For presentation, prefer per-node utilization when provided, else totalSize
+            contractsTotalBytes += (typeof contract.utilized === 'number') ? contract.utilized : contractSize;
             
             // Count files in contract
             const fileCount = contract.fileCount || (contract.files ? contract.files.length : 1);
@@ -2300,7 +2308,7 @@ async function updatePinnedFilesInfo() {
                             contractFullyPinned = false;
                             missingPins.push(file.cid);
                             console.log(`Missing pin for file: ${file.cid} (size: ${file.size}) from contract ${contract.id}`);
-                        }
+                    }
                     }
                 });
                 
@@ -2352,9 +2360,12 @@ async function updatePinnedFilesInfo() {
         }
         
         const spaceUsedEl = document.getElementById('storage-used');
+        // Storage used reflects the total of contracts stored on this node (from Honeygraph):
+        // prefer per-node utilization if available, else total contract sizes.
+        const usedBytes = contractsTotalBytes > 0 ? contractsTotalBytes : (totalUtilized > 0 ? totalUtilized : totalSize);
         if (spaceUsedEl) {
-            spaceUsedEl.textContent = formatBytes(totalSize);
-            console.log('Updated space used element to:', formatBytes(totalSize));
+            spaceUsedEl.textContent = formatBytes(usedBytes);
+            console.log('Updated space used element to:', formatBytes(usedBytes), { totalUtilized, totalSize });
         } else {
             console.error('Could not find storage-used element');
         }
@@ -2375,6 +2386,12 @@ async function updatePinnedFilesInfo() {
                 if (spaceAvailableEl) {
                     spaceAvailableEl.textContent = formatBytes(available > 0 ? available : 0);
                     console.log('Updated space available to:', formatBytes(available));
+                }
+
+                // Update quick monitor bar if present
+                const usageEl = document.getElementById('storage-usage');
+                if (usageEl) {
+                    usageEl.textContent = `${formatBytes(usedBytes)} / ${formatBytes(storageMax || 0)}`;
                 }
             }
         } catch (error) {

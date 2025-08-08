@@ -250,14 +250,49 @@ class SettingsModal {
   addStyles() {
     const style = document.createElement('style');
     style.textContent = `
+      /* Overlay container */
+      .settings-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        padding: 2rem;
+      }
+
       .settings-modal .modal-content {
-        max-width: 800px;
+        width: min(900px, 95vw);
         max-height: 90vh;
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        border: 1px solid rgba(0,0,0,0.08);
       }
       
+      .settings-modal .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid #e9ecef;
+        background: #fafafa;
+      }
+
+      .settings-modal .modal-header .close-btn {
+        border: none;
+        background: transparent;
+        font-size: 1.5rem;
+        line-height: 1;
+        cursor: pointer;
+        color: #666;
+      }
+
       .settings-body {
         display: flex;
         flex: 1;
@@ -265,10 +300,11 @@ class SettingsModal {
       }
       
       .settings-tabs {
-        min-width: 180px;
+        min-width: 200px;
         background: #f8f9fa;
         border-right: 1px solid #dee2e6;
-        padding: 1rem 0;
+        padding: 0.75rem 0;
+        overflow-y: auto;
       }
       
       .settings-tab {
@@ -290,12 +326,14 @@ class SettingsModal {
       .settings-tab.active {
         background: #007bff;
         color: white;
+        box-shadow: inset 2px 0 0 rgba(0,0,0,0.05);
       }
       
       .settings-content-area {
         flex: 1;
         overflow-y: auto;
         padding: 1.5rem;
+        background: #fff;
       }
       
       .settings-panel {
@@ -411,6 +449,44 @@ class SettingsModal {
       .modal-actions {
         display: flex;
         gap: 0.5rem;
+      }
+
+      .settings-modal .modal-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1.25rem;
+        border-top: 1px solid #e9ecef;
+        background: #fafafa;
+      }
+
+      /* Responsive tweaks */
+      @media (max-width: 768px) {
+        .settings-modal {
+          padding: 0.5rem;
+        }
+        .settings-modal .modal-content {
+          width: 100vw;
+          max-height: 100vh;
+          border-radius: 0;
+        }
+        .settings-body {
+          flex-direction: column;
+        }
+        .settings-tabs {
+          min-width: unset;
+          display: flex;
+          gap: 0.25rem;
+          overflow-x: auto;
+          border-right: none;
+          border-bottom: 1px solid #dee2e6;
+          padding: 0.5rem;
+        }
+        .settings-tab {
+          width: auto;
+          white-space: nowrap;
+          border-radius: 6px;
+        }
       }
     `;
     document.head.appendChild(style);
