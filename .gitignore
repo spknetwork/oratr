@@ -9,7 +9,6 @@ dist/
 out/
 build/
 bin/
-src/core/binaries/
 
 # Test coverage
 coverage/
