@@ -247,7 +247,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     console.log('[DEBUG] storageAutoStarting:', storageAutoStarting);
     // Initialize auth component
     const authContainer = document.getElementById('auth-container');
-    authContainer.style.display = 'block';
+    authContainer.style.display = 'flex';
     console.log('[DEBUG] About to initialize auth component');
     await window.authComponent.init(authContainer);
     console.log('[DEBUG] Auth component initialized');
@@ -475,19 +475,19 @@ function showAccountManager() {
     const authContainer = document.getElementById('auth-container');
     const app = document.getElementById('app');
     
-    // Keep app visible but blur it
-    app.style.opacity = '0.3';
-    app.style.pointerEvents = 'none';
+    // Keep app visible; sidebar remains interactive
+    app.style.opacity = '1';
+    app.style.pointerEvents = 'auto';
     
-    // Show auth container as overlay
-    authContainer.style.display = 'block';
-    authContainer.style.position = 'fixed';
-    authContainer.style.top = '0';
-    authContainer.style.left = '0';
-    authContainer.style.right = '0';
-    authContainer.style.bottom = '0';
-    authContainer.style.zIndex = '1000';
-    authContainer.style.background = 'rgba(26, 26, 26, 0.95)';
+    // Show auth container within content area (no full-screen overlay)
+    authContainer.style.display = 'flex';
+    authContainer.style.position = 'relative';
+    authContainer.style.top = '';
+    authContainer.style.left = '';
+    authContainer.style.right = '';
+    authContainer.style.bottom = '';
+    authContainer.style.zIndex = '';
+    authContainer.style.background = 'transparent';
     
     // Check if wallet is locked - if so, show unlock instead of account manager
     if (!isAuthenticated) {

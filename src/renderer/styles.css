@@ -28,18 +28,20 @@ body {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.9rem 0.9rem 0.6rem 0.9rem;
+    padding: 1.2rem 1rem 0.8rem 1rem;
     border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
 .brand-icon {
-    width: 24px;
-    height: 24px;
+    width: 36px; /* 50% larger */
+    height: 36px;
 }
 
 .brand-name {
     color: #e6e8eb;
-    font-weight: 600;
+    font-weight: 700;
+    font-size: 1.25rem; /* 50% larger than ~0.85rem baseline */
+    letter-spacing: 0.2px;
 }
 
 h1 {
@@ -118,20 +120,20 @@ button:active {
 
 main {
     flex: 1;
-    padding: 2rem;
+    padding: 0; /* Let sidebar touch window edges; move padding to content area */
     overflow-y: auto;
 }
 
 #app .app-layout {
     display: grid;
     grid-template-columns: 260px 1fr;
-    height: calc(100vh - 80px);
+    height: 100vh; /* Extend to top and bottom */
 }
 
 .app-sidebar {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start; /* Pin items to top */
     background: rgba(255,255,255,0.03);
     border-right: 1px solid rgba(255,255,255,0.08);
 }
@@ -139,9 +141,11 @@ main {
 .app-sidebar .nav-list {
     display: flex;
     flex-direction: column;
-    padding: 0.5rem;
+    padding: 0.75rem 0.5rem 0.5rem 0.5rem;
     gap: 0.25rem;
     overflow-y: auto;
+    flex: 1 1 auto; /* Grow to push footer to bottom */
+    min-height: 0; /* Allow proper scrolling within flex container */
 }
 
 .app-sidebar .tab {
@@ -154,7 +158,11 @@ main {
     color: #c8d0d8;
     border: none;
     border-radius: 8px;
-    padding: 0.65rem 0.9rem;
+    padding: 0.9rem 1rem; /* Taller tabs for touch targets */
+}
+
+.app-sidebar .tab .icon {
+    font-size: 1.15rem; /* Slightly larger tab icons */
 }
 
 .app-sidebar .tab:hover {
@@ -172,6 +180,7 @@ main {
     border-top: 1px solid rgba(255,255,255,0.08);
     display: grid;
     gap: 0.4rem;
+    margin-top: auto; /* Pin footer to bottom */
 }
 
 .sidebar-footer .sidebar-btn {
@@ -186,6 +195,7 @@ main {
 
 .content-area {
     overflow: hidden;
+    padding: 2rem; /* Preserve interior spacing moved from main */
 }
 
 .tabs {
@@ -354,12 +364,15 @@ main {
 
 /* Auth Component Styles */
 #auth-container {
+    display: none; /* hidden by default */
+}
+
+.content-area #auth-container {
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 100vh;
-    background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 50%, #1f1f1f 100%);
-    backdrop-filter: blur(10px);
+    min-height: calc(100vh - 0px);
+    background: transparent; /* Let the main background show; overlay panels handle their own bg */
 }
 
 .auth-container {
@@ -1300,7 +1313,22 @@ button:disabled:hover {
     font-style: italic;
 }
 
-/* Wallet Styles */
+/* Wallet Styles - Center content in main view */
+#balance-tab {
+    display: flex;
+    justify-content: center;
+}
+
+#balance-tab .tab-content {
+    width: 100%;
+}
+
+#spk-wallet-tab,
+#hive-wallet-tab {
+    max-width: 980px; /* Centered column width */
+    margin: 0 auto;
+}
+
 .wallet-tabs {
     display: flex;
     gap: 0.5rem;

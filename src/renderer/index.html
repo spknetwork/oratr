@@ -7,9 +7,6 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Auth Container -->
-    <div id="auth-container" style="display: none;"></div>
-    
     <!-- Main App -->
     <div id="app" style="display: none;">
 
@@ -46,6 +43,8 @@
                 </aside>
 
                 <div class="content-area">
+                    <!-- Auth Container now occupies main content area so sidebar remains accessible -->
+                    <div id="auth-container" style="display: none;"></div>
             <!-- Video Upload Tab -->
             <div id="upload-tab" class="tab-content">
                 <h2>Upload Video</h2>

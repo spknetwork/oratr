@@ -1087,9 +1087,9 @@ class AuthComponent {
     // Clear the auth container content first to prevent any lingering event handlers
     authContainer.innerHTML = '';
     
-    // Hide auth container and reset all overlay styles
+    // Hide auth container and reset overlay styles (now embedded in content area)
     authContainer.style.display = 'none';
-    authContainer.style.position = '';
+    authContainer.style.position = 'relative';
     authContainer.style.top = '';
     authContainer.style.left = '';
     authContainer.style.right = '';
