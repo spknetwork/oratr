@@ -61,6 +61,7 @@
     "hive-tx": "^4.0.6",
     "ipfs-only-hash": "^4.0.0",
     "kubo-rpc-client": "^3.0.2",
+    "webdav-server": "^2.6.2",
     "p-queue": "^7.4.1",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",

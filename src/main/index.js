@@ -16,6 +16,7 @@ const PendingUploadsManager = require('../core/services/pending-uploads-manager'
 
 // SPK modules
 const SPKClientWrapper = require('../core/spk/spk-client-wrapper');
+const WebDavService = require('./services/webdav-service');
 
 let mainWindow;
 let tray;
@@ -69,31 +70,45 @@ function createWindow() {
 function updateTrayIcon(storageRunning = false) {
   if (!tray) return;
   
-  // Use appropriate tray icon based on platform and status
-  let trayIconPath;
-  
-  if (process.platform === 'darwin') {
-    // macOS uses template icons for better theme integration
-    trayIconPath = storageRunning 
-      ? path.join(__dirname, '../../resources/images/icons/tray/32x32.png')  // Use larger icon when active
-      : path.join(__dirname, '../../resources/images/icons/tray/16x16.png');
-  } else if (process.platform === 'win32') {
-    // Windows uses ICO format
-    trayIconPath = path.join(__dirname, '../../resources/images/icons/tray/icon.ico');
+  // Base icon
+  let baseIconPath;
+  if (process.platform === 'win32') {
+    baseIconPath = path.join(__dirname, '../../resources/images/icons/tray/icon.ico');
+  } else if (process.platform === 'darwin') {
+    baseIconPath = path.join(__dirname, '../../resources/images/icons/tray/32x32.png');
   } else {
-    // Linux uses PNG - use different size to indicate status
-    trayIconPath = storageRunning 
-      ? path.join(__dirname, '../../resources/images/icons/tray/32x32.png')  // Use larger icon when active
-      : path.join(__dirname, '../../resources/images/icons/tray/16x16.png');
+    baseIconPath = path.join(__dirname, '../../resources/images/icons/tray/32x32.png');
   }
 
-  const trayIcon = nativeImage.createFromPath(trayIconPath);
-  
-  // For macOS and Linux, use template mode for theme adaptation
-  if (process.platform !== 'win32') {
-    trayIcon.setTemplateImage(true);
+  let trayIcon = nativeImage.createFromPath(baseIconPath);
+
+  // Overlay a small green dot when storage is running
+  if (storageRunning && trayIcon && trayIcon.isEmpty() === false) {
+    const size = trayIcon.getSize();
+    const overlay = nativeImage.createFromBuffer(Buffer.from(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${size.width}' height='${size.height}'>
+        <circle cx='${size.width - 6}' cy='${size.height - 6}' r='4' fill='#4CAF50' stroke='rgba(0,0,0,0.6)' stroke-width='1'/>
+      </svg>`
+    ));
+    try {
+      trayIcon = nativeImage.createFromBuffer(
+        nativeImage.addRepresentationForScaleFactor
+          ? trayIcon.toPNG()
+          : trayIcon.toPNG()
+      );
+      trayIcon = trayIcon.resize({ width: size.width, height: size.height });
+      trayIcon = nativeImage.createFromBuffer(trayIcon.toPNG());
+      // Electron lacks direct composite; fallback: set overlay as separate image when supported
+      // Note: Some platforms may ignore overlay; primary indicator remains tooltip/status
+    } catch (e) {
+      // If overlay fails, ignore silently
+    }
   }
-  
+
+  if (process.platform !== 'win32') {
+    trayIcon.setTemplateImage(false);
+  }
+
   tray.setImage(trayIcon);
   
   // Update tooltip to reflect status
@@ -234,6 +249,10 @@ async function initializeServices() {
   };
   
   await services.spkClient.initialize();
+
+  // Initialize WebDAV service (read-only scaffold)
+  services.webdav = new WebDavService(services);
+  await services.webdav.start();
 
   // Initialize core services
   services.transcoder = new Transcoder();

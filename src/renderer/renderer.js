@@ -427,8 +427,10 @@ function updateWalletLockStatus(locked) {
     const accountName = document.getElementById('account-name');
     
     if (locked) {
-        accountBtn.innerHTML = '🔒 Unlock';
-        accountBtn.classList.add('locked');
+        if (accountBtn) {
+            accountBtn.innerHTML = '🔒 Unlock';
+            accountBtn.classList.add('locked');
+        }
         if (accountName) {
             accountName.style.opacity = '0.5';
         }
@@ -438,8 +440,10 @@ function updateWalletLockStatus(locked) {
             btn.title = 'Wallet locked - click Unlock to continue';
         });
     } else {
-        accountBtn.innerHTML = 'Accounts';
-        accountBtn.classList.remove('locked');
+        if (accountBtn) {
+            accountBtn.innerHTML = 'Accounts';
+            accountBtn.classList.remove('locked');
+        }
         if (accountName) {
             accountName.style.opacity = '1';
         }
@@ -457,11 +461,11 @@ function updateAccountDisplay() {
     const accountBalance = document.getElementById('account-balance');
     
     if (currentAccount) {
-        accountName.textContent = currentAccount;
+        if (accountName) accountName.textContent = currentAccount;
         // Balance will be updated by refreshBalance()
     } else {
-        accountName.textContent = 'No account';
-        accountBalance.innerHTML = '';
+        if (accountName) accountName.textContent = 'No account';
+        if (accountBalance) accountBalance.innerHTML = '';
     }
 }
 
@@ -534,6 +538,14 @@ window.api = {
         testConnection: (host, port) => ipcRenderer.invoke('ipfs:testConnection', host, port),
         checkPubSub: () => ipcRenderer.invoke('ipfs:checkPubSub'),
         enablePubSub: () => ipcRenderer.invoke('ipfs:enablePubSub')
+    },
+    // SPK aliases used throughout renderer
+    spk: {
+        getActiveAccount: () => ipcRenderer.invoke('account:getActive'),
+        getNetworkStats: () => ipcRenderer.invoke('spk:getNetworkStats'),
+        checkRegistration: (username) => ipcRenderer.invoke('spk:checkRegistration', username),
+        registerStorage: (ipfsId, domain, price, options) => ipcRenderer.invoke('spk:registerStorage', ipfsId, domain, price, options),
+        removeFiles: (contractIds) => ipcRenderer.invoke('spk:removeFiles', contractIds)
     },
     storage: {
         start: () => ipcRenderer.invoke('storage:start'),
@@ -619,6 +631,10 @@ window.api = {
         getContracts: () => ipcRenderer.invoke('contracts:getContracts'),
         getPinnedCIDs: () => ipcRenderer.invoke('contracts:getPinnedCIDs'),
         checkNow: () => ipcRenderer.invoke('contracts:checkNow')
+    },
+    poa: {
+        getConfig: () => ipcRenderer.invoke('poa:get-config'),
+        getStatus: () => ipcRenderer.invoke('poa:get-status')
     },
     // Generic invoke method for all IPC calls
     invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),

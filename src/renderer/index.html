@@ -12,27 +12,40 @@
     
     <!-- Main App -->
     <div id="app" style="display: none;">
-        <header>
-            <h1>Oratr</h1>
-            <div class="account-info">
-                <span id="account-name">No account</span>
-                <div id="account-balance" class="balance-mini"></div>
-                <button id="settings-btn" onclick="settingsModal.show()" title="Settings">⚙️</button>
-                <button id="account-btn" onclick="showAccountManager()">Accounts</button>
-            </div>
-        </header>
 
         <main>
-            <div class="tabs">
-                <button class="tab active" onclick="showTab('drive')">My Files</button>
-                <button class="tab" onclick="showTab('upload')">Video Upload</button>
-                <button class="tab" onclick="showTab('balance')">Wallet</button>
-                <button class="tab" onclick="showTab('storage')" id="storage-tab-button">
-                    Storage Node
-                    <span class="status-indicator"></span>
-                </button>
-            </div>
+            <div class="app-layout">
+                <aside class="app-sidebar">
+                    <div class="sidebar-brand">
+                        <img src="../../resources/images/icons/tray/oratr_icon_alpha.png" alt="Oratr" class="brand-icon" />
+                        <span class="brand-name">Oratr</span>
+                    </div>
+                    <nav class="nav-list">
+                        <button class="tab active" onclick="showTab('drive')">
+                            <span class="icon">📁</span>
+                            <span class="label">My Files</span>
+                        </button>
+                        <button class="tab" onclick="showTab('upload')">
+                            <span class="icon">🎥</span>
+                            <span class="label">Video Upload</span>
+                        </button>
+                        <button class="tab" onclick="showTab('balance')">
+                            <span class="icon">💼</span>
+                            <span class="label">Wallet</span>
+                        </button>
+                        <button class="tab" onclick="showTab('storage')" id="storage-tab-button">
+                            <span class="icon">🗄️</span>
+                            <span class="label">Storage Node</span>
+                            <span class="status-indicator"></span>
+                        </button>
+                    </nav>
+                    <div class="sidebar-footer">
+                        <button class="sidebar-btn" onclick="showAccountManager()">👤 Account</button>
+                        <button class="sidebar-btn" onclick="settingsModal.show()">⚙️ Settings</button>
+                    </div>
+                </aside>
 
+                <div class="content-area">
             <!-- Video Upload Tab -->
             <div id="upload-tab" class="tab-content">
                 <h2>Upload Video</h2>
@@ -968,7 +981,8 @@
             <div id="drive-tab" class="tab-content active">
                 <!-- Vue component will be mounted here -->
             </div>
-            </div>
+                </div> <!-- /.content-area -->
+            </div> <!-- /.app-layout -->
         </main>
     </div>
 

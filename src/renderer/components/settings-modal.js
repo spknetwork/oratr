@@ -7,7 +7,8 @@ class SettingsModal {
   constructor() {
     this.modal = null;
     this.currentSettings = {};
-    this.tabs = ['network', 'ipfs', 'upload', 'storage', 'ui', 'advanced'];
+    // Primary sections in sidebar
+    this.tabs = ['network', 'ipfs', 'storage', 'upload'];
     this.activeTab = 'network';
   }
 
@@ -24,17 +25,27 @@ class SettingsModal {
             <h2>⚙️ Settings</h2>
             <button class="close-btn" onclick="settingsModal.close()">&times;</button>
           </div>
-          
+
           <div class="settings-body">
-            <div class="settings-tabs">
-              ${this.tabs.map(tab => `
-                <button class="settings-tab ${tab === this.activeTab ? 'active' : ''}" 
-                        onclick="settingsModal.switchTab('${tab}')">
-                  ${this.getTabIcon(tab)} ${this.getTabTitle(tab)}
+            <aside class="settings-sidebar">
+              <nav class="nav-list">
+                ${this.tabs.map(tab => `
+                  <button class="settings-tab ${tab === this.activeTab ? 'active' : ''}" onclick="settingsModal.switchTab('${tab}')">
+                    <span class="icon">${this.getTabIcon(tab)}</span>
+                    <span class="label">${this.getTabTitle(tab)}</span>
+                  </button>
+                `).join('')}
+              </nav>
+              <div class="sidebar-footer">
+                <button class="sidebar-btn" onclick="window.authComponent && window.authComponent.showAccountManager()">
+                  👤 Account
                 </button>
-              `).join('')}
-            </div>
-            
+                <button class="sidebar-btn" onclick="settingsModal.close()">
+                  ✖ Close
+                </button>
+              </div>
+            </aside>
+
             <div class="settings-content-area">
               <div id="settings-network" class="settings-panel active">
                 <h3>🌐 Network Settings</h3>
@@ -157,75 +168,9 @@ class SettingsModal {
                 </div>
               </div>
               
-              <div id="settings-ui" class="settings-panel">
-                <h3>🎨 UI Settings</h3>
-                
-                <div class="setting-group">
-                  <label>Theme:</label>
-                  <select id="theme">
-                    <option value="auto">Auto (system)</option>
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                  </select>
-                </div>
-                
-                <div class="setting-group">
-                  <label>Auto-refresh Interval:</label>
-                  <div class="input-with-unit">
-                    <input type="number" id="refresh-interval" min="5" max="300" value="30">
-                    <span>seconds</span>
-                  </div>
-                </div>
-                
-                <div class="setting-group">
-                  <label class="setting-label">
-                    <input type="checkbox" id="show-advanced"> Show advanced options
-                  </label>
-                </div>
-                
-                <div class="setting-group">
-                  <label class="setting-label">
-                    <input type="checkbox" id="confirm-dangerous"> Confirm dangerous actions
-                  </label>
-                </div>
-              </div>
-              
-              <div id="settings-advanced" class="settings-panel">
-                <h3>🔧 Advanced Settings</h3>
-                
-                <div class="setting-group">
-                  <label class="setting-label">
-                    <input type="checkbox" id="debug-mode"> Debug mode
-                    <small>Enable detailed logging and debug features</small>
-                  </label>
-                </div>
-                
-                <div class="setting-group">
-                  <label>Log Level:</label>
-                  <select id="log-level">
-                    <option value="debug">Debug (very verbose)</option>
-                    <option value="info">Info (default)</option>
-                    <option value="warn">Warnings only</option>
-                    <option value="error">Errors only</option>
-                  </select>
-                </div>
-                
-                <div class="setting-group">
-                  <label class="setting-label">
-                    <input type="checkbox" id="share-usage-stats"> Share anonymous usage statistics
-                    <small>Help improve Oratr by sharing anonymous usage data</small>
-                  </label>
-                </div>
-                
-                <div class="setting-group">
-                  <h4>Backup & Restore</h4>
-                  <div class="button-group">
-                    <button onclick="settingsModal.exportSettings()" class="btn btn-secondary">Export Settings</button>
-                    <button onclick="settingsModal.importSettings()" class="btn btn-secondary">Import Settings</button>
-                    <button onclick="settingsModal.resetSettings()" class="btn btn-danger">Reset to Defaults</button>
-                  </div>
-                </div>
-              </div>
+              <!-- The UI and Advanced panels are still supported; they will render if switchTab is invoked via code -->
+              <div id="settings-ui" class="settings-panel"></div>
+              <div id="settings-advanced" class="settings-panel"></div>
             </div>
           </div>
           
@@ -269,10 +214,10 @@ class SettingsModal {
         overflow: hidden;
         display: flex;
         flex-direction: column;
-        background: #fff;
+        background: var(--panel-bg, #121418);
         border-radius: 10px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-        border: 1px solid rgba(0,0,0,0.08);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+        border: 1px solid rgba(255,255,255,0.06);
       }
       
       .settings-modal .modal-header {
@@ -280,8 +225,9 @@ class SettingsModal {
         align-items: center;
         justify-content: space-between;
         padding: 1rem 1.25rem;
-        border-bottom: 1px solid #e9ecef;
-        background: #fafafa;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        background: transparent;
+        color: var(--text, #e6e8eb);
       }
 
       .settings-modal .modal-header .close-btn {
@@ -290,7 +236,7 @@ class SettingsModal {
         font-size: 1.5rem;
         line-height: 1;
         cursor: pointer;
-        color: #666;
+        color: #9aa3ad;
       }
 
       .settings-body {
@@ -299,41 +245,56 @@ class SettingsModal {
         overflow: hidden;
       }
       
-      .settings-tabs {
-        min-width: 200px;
-        background: #f8f9fa;
-        border-right: 1px solid #dee2e6;
-        padding: 0.75rem 0;
+      .settings-sidebar {
+        min-width: 240px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        background: rgba(255,255,255,0.03);
+        border-right: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .settings-sidebar .nav-list {
+        display: flex;
+        flex-direction: column;
+        padding: 0.5rem;
+        gap: 0.25rem;
         overflow-y: auto;
       }
       
       .settings-tab {
         display: block;
         width: 100%;
-        padding: 0.75rem 1rem;
+        padding: 0.65rem 0.9rem;
         border: none;
         background: transparent;
         text-align: left;
         cursor: pointer;
         transition: background-color 0.2s;
         font-size: 0.9rem;
+        color: #c8d0d8;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
       }
       
       .settings-tab:hover {
-        background: #e9ecef;
+        background: rgba(255,255,255,0.06);
       }
       
       .settings-tab.active {
-        background: #007bff;
-        color: white;
-        box-shadow: inset 2px 0 0 rgba(0,0,0,0.05);
+        background: linear-gradient(90deg, rgba(0,123,255,0.25), rgba(0,123,255,0.05));
+        color: #fff;
+        box-shadow: inset 0 0 0 1px rgba(0,123,255,0.35);
       }
       
       .settings-content-area {
         flex: 1;
         overflow-y: auto;
         padding: 1.5rem;
-        background: #fff;
+        background: transparent;
+        color: var(--text, #e6e8eb);
       }
       
       .settings-panel {
@@ -370,8 +331,10 @@ class SettingsModal {
       .setting-group select {
         width: 100%;
         padding: 0.5rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        border: 1px solid rgba(255,255,255,0.15);
+        background: rgba(255,255,255,0.06);
+        color: #e6e8eb;
+        border-radius: 6px;
         font-size: 0.9rem;
       }
       
@@ -410,10 +373,10 @@ class SettingsModal {
       
       .path-input button {
         padding: 0.5rem 1rem;
-        background: #6c757d;
-        color: white;
+        background: rgba(0,123,255,0.18);
+        color: #e6e8eb;
         border: none;
-        border-radius: 4px;
+        border-radius: 6px;
         cursor: pointer;
       }
       
@@ -435,8 +398,10 @@ class SettingsModal {
       
       .button-group button {
         padding: 0.5rem 1rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        border: 1px solid rgba(255,255,255,0.15);
+        background: rgba(255,255,255,0.06);
+        color: #e6e8eb;
+        border-radius: 6px;
         cursor: pointer;
         font-size: 0.9rem;
       }
@@ -456,8 +421,25 @@ class SettingsModal {
         align-items: center;
         justify-content: space-between;
         padding: 0.75rem 1.25rem;
-        border-top: 1px solid #e9ecef;
-        background: #fafafa;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        background: transparent;
+        color: #9aa3ad;
+      }
+
+      .sidebar-footer {
+        padding: 0.5rem;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        display: grid;
+        gap: 0.4rem;
+      }
+      .sidebar-btn {
+        padding: 0.55rem 0.75rem;
+        background: rgba(255,255,255,0.06);
+        color: #e6e8eb;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px;
+        text-align: left;
+        cursor: pointer;
       }
 
       /* Responsive tweaks */
@@ -473,14 +455,10 @@ class SettingsModal {
         .settings-body {
           flex-direction: column;
         }
-        .settings-tabs {
+        .settings-sidebar {
           min-width: unset;
-          display: flex;
-          gap: 0.25rem;
-          overflow-x: auto;
           border-right: none;
-          border-bottom: 1px solid #dee2e6;
-          padding: 0.5rem;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
         }
         .settings-tab {
           width: auto;
