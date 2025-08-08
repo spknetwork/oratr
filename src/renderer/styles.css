@@ -3053,7 +3053,17 @@ input:checked + .toggle-slider:before {
     align-items: center;
     position: relative;
     z-index: 2;
-    min-width: 80px;
+    min-width: 100px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    border-radius: 10px;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.wizard-progress .step:hover {
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .wizard-progress .step.active .step-number {
@@ -3093,10 +3103,15 @@ input:checked + .toggle-slider:before {
     border-radius: 8px;
     padding: 2rem;
     margin-bottom: 1rem;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 160ms ease, transform 160ms ease;
 }
 
 .wizard-step.active {
     display: block;
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .wizard-step h3 {
@@ -3106,9 +3121,11 @@ input:checked + .toggle-slider:before {
 
 .step-actions {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
     margin-top: 1.5rem;
-    justify-content: space-between;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 48px; /* Prevent layout shift between steps */
 }
 
 .step-actions .btn-secondary {
@@ -3117,6 +3134,50 @@ input:checked + .toggle-slider:before {
 
 .step-actions .btn-secondary:hover {
     background: #444;
+}
+
+/* Keep primary action consistently on the right and size stable */
+.setup-wizard .step-actions .btn-primary {
+    margin-left: auto;
+    min-width: 180px;
+}
+
+.setup-wizard .step-actions .btn {
+    min-height: 40px;
+}
+
+/* Normalize other action bars inside wizard (e.g., IPFS info actions) */
+.setup-wizard .wizard-step .actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 48px;
+}
+
+.setup-wizard .wizard-step .actions .btn-primary {
+    margin-left: auto;
+    min-width: 180px;
+}
+
+/* Final step actions: keep Start on the right, Previous on the left */
+.setup-wizard .final-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.setup-wizard .final-actions .btn-primary {
+    margin-left: auto;
+    min-width: 200px;
+}
+
+/* Standardize wizard button widths for consistent feel */
+.setup-wizard .btn {
+    min-width: 140px;
+}
+
+.setup-wizard .btn.btn-sm {
+    min-width: auto;
 }
 
 /* Storage Limit Controls */

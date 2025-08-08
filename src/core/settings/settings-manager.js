@@ -49,7 +49,7 @@ class SettingsManager extends EventEmitter {
       enableStorageNode: true,
       storageNodeDomain: '', // Optional domain for gateway services
       storageBidRate: 500,
-      autoStartStorage: false,
+      autoStartStorage: true,
       storageNodeWasRunning: false, // Track if storage node was running before shutdown
       
       // Privacy Settings

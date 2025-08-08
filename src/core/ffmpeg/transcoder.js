@@ -14,25 +14,29 @@ const FFmpegBinaryManager = require('../binaries/ffmpeg-binary');
 class Transcoder extends EventEmitter {
   constructor(config = {}) {
     super();
-    // Use bundled FFmpeg binaries by default
-    const binaryManager = new FFmpegBinaryManager();
+    // Initialize binary manager
+    this.binaryManager = new FFmpegBinaryManager();
     
     // Resolve ffmpeg/ffprobe paths in order: config → bundled binaries → packaged bin → system PATH
-    this.ffmpegPath = config.ffmpegPath || this.resolveBinaryPath('ffmpeg', binaryManager);
-    this.ffprobePath = config.ffprobePath || this.resolveBinaryPath('ffprobe', binaryManager);
+    this.ffmpegPath = config.ffmpegPath || this.resolveBinaryPath('ffmpeg');
+    this.ffprobePath = config.ffprobePath || this.resolveBinaryPath('ffprobe');
     this.tempDir = config.tempDir || path.join(os.tmpdir(), 'spk-transcode');
     this.activeJobs = new Map();
     this.isAvailable = null;
     
-    // Set FFmpeg paths
-    ffmpeg.setFfmpegPath(this.ffmpegPath);
-    ffmpeg.setFfprobePath(this.ffprobePath);
+    // Set FFmpeg paths if they exist
+    if (this.ffmpegPath) {
+      ffmpeg.setFfmpegPath(this.ffmpegPath);
+    }
+    if (this.ffprobePath) {
+      ffmpeg.setFfprobePath(this.ffprobePath);
+    }
   }
 
-  resolveBinaryPath(binaryName, binaryManager) {
+  resolveBinaryPath(binaryName) {
     // First try to use bundled binaries
     try {
-      const paths = binaryManager.getBinaryPaths();
+      const paths = this.binaryManager.getBinaryPaths();
       if (binaryName === 'ffmpeg' && require('fs').existsSync(paths.ffmpegPath)) {
         return paths.ffmpegPath;
       }
@@ -60,6 +64,38 @@ class Transcoder extends EventEmitter {
   }
 
   /**
+   * Initialize and ensure FFmpeg binaries are available
+   */
+  async initialize() {
+    try {
+      // Try to ensure binaries are installed (will auto-download if needed)
+      if (!this.ffmpegPath || !require('fs').existsSync(this.ffmpegPath)) {
+        console.log('FFmpeg not found, checking for installation...');
+        const paths = await this.binaryManager.install(true); // Auto-download enabled
+        this.ffmpegPath = paths.ffmpegPath;
+        this.ffprobePath = paths.ffprobePath;
+        
+        // Update fluent-ffmpeg paths
+        if (this.ffmpegPath) {
+          ffmpeg.setFfmpegPath(this.ffmpegPath);
+        }
+        if (this.ffprobePath) {
+          ffmpeg.setFfprobePath(this.ffprobePath);
+        }
+      }
+      
+      // Verify installation
+      await this.getFFmpegVersion();
+      this.isAvailable = true;
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize FFmpeg:', error.message);
+      this.isAvailable = false;
+      return false;
+    }
+  }
+
+  /**
    * Check if FFmpeg is available
    */
   async checkFFmpegAvailable() {
@@ -70,8 +106,8 @@ class Transcoder extends EventEmitter {
       this.isAvailable = true;
       return true;
     } catch (error) {
-      this.isAvailable = false;
-      return false;
+      // Try to initialize if not available
+      return await this.initialize();
     }
   }
 

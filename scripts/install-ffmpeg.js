@@ -6,28 +6,35 @@ async function main() {
   const manager = new FFmpegBinaryManager();
   
   try {
-    console.log('Installing FFmpeg binaries for Oratr...\n');
+    console.log('Checking FFmpeg installation for Oratr...\n');
     
     const paths = await manager.install();
     
-    console.log('\n✓ FFmpeg binaries installed successfully!');
-    console.log(`  FFmpeg: ${paths.ffmpegPath}`);
-    console.log(`  FFprobe: ${paths.ffprobePath}`);
+    // Try to verify if paths exist
+    const fs = require('fs');
+    const ffmpegExists = fs.existsSync(paths.ffmpegPath);
+    const ffprobeExists = fs.existsSync(paths.ffprobePath);
     
-    // Verify installation
-    console.log('\nVerifying installation...');
-    const verified = await manager.verify();
-    
-    if (verified) {
-      console.log('✓ FFmpeg is working correctly!\n');
+    if (ffmpegExists && ffprobeExists) {
+      console.log('\n✓ FFmpeg is available!');
+      console.log(`  FFmpeg: ${paths.ffmpegPath}`);
+      console.log(`  FFprobe: ${paths.ffprobePath}`);
+      
+      // Try to verify it works
+      const verified = await manager.verify();
+      if (verified) {
+        console.log('✓ FFmpeg is working correctly!\n');
+      }
     } else {
-      console.error('✗ FFmpeg verification failed. Please check the installation.\n');
-      process.exit(1);
+      console.log('\n⚠️  FFmpeg is not installed yet.');
+      console.log('The application will attempt to use system FFmpeg if available.');
+      console.log('Or it will prompt you to install FFmpeg when needed.\n');
+      // Don't exit with error - let the app handle missing FFmpeg
     }
   } catch (error) {
-    console.error('\n✗ Failed to install FFmpeg:', error.message);
-    console.error('\nYou can manually install FFmpeg from: https://ffmpeg.org/download.html');
-    process.exit(1);
+    console.log('\n⚠️  FFmpeg check completed with warnings.');
+    console.log('The application will attempt to use system FFmpeg if available.\n');
+    // Don't exit with error - this is optional
   }
 }
 

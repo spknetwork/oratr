@@ -2082,6 +2082,12 @@ async function startStorageNode() {
         }, 30000); // 30 seconds
         
         showNotification('Storage node started successfully!', 'success');
+        // Persist user intent to auto-start next launch for a polished UX
+        try {
+            await window.api.invoke('settings:set', { key: 'autoStartStorage', value: true });
+        } catch (e) {
+            console.warn('Failed to persist autoStartStorage setting:', e);
+        }
         
     } catch (error) {
         console.error('Storage node startup error:', error);
@@ -3014,10 +3020,18 @@ async function checkRegistration() {
                 );
                 
                 if (!validation.valid) {
-                    statusEl.innerHTML += `<br><span style="color: orange">⚠️ IPFS ID mismatch!</span>`;
+                    statusEl.innerHTML += `<br><span style=\"color: orange\">⚠️ IPFS ID mismatch!</span>`;
                     statusEl.innerHTML += `<br><small>Current: ${ipfsInfo.id}</small>`;
                     statusEl.innerHTML += `<br><small>Registered: ${validation.registeredId || 'Unknown'}</small>`;
-                    statusEl.innerHTML += `<br><small style="color: #888">You may need to update your registration or use the registered IPFS node</small>`;
+                    statusEl.innerHTML += `<br><small style=\"color: #888\">You may need to update your registration or use the registered IPFS node</small>`;
+                    // Offer to re-register current IPFS ID (same UX as fresh registration)
+                    const regBtn = document.getElementById('register-storage-btn');
+                    if (regBtn) {
+                        regBtn.textContent = 'Register Current IPFS ID';
+                        regBtn.style.display = 'inline-block';
+                    }
+                    const nextBtn2 = document.getElementById('registration-next-btn');
+                    if (nextBtn2) nextBtn2.disabled = true;
                 } else {
                     statusEl.innerHTML += `<br><span style="color: green">✓ IPFS ID matches</span>`;
                     
@@ -3048,6 +3062,11 @@ async function checkRegistration() {
         const nextBtn = document.getElementById('registration-next-btn');
         if (nextBtn) {
             nextBtn.disabled = true;
+        }
+        const regBtnReset = document.getElementById('register-storage-btn');
+        if (regBtnReset) {
+            regBtnReset.textContent = 'Register Storage Node';
+            regBtnReset.style.display = 'inline-block';
         }
     }
 }

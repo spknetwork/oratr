@@ -1208,6 +1208,54 @@ function setupIPCHandlers() {
     }
   });
 
+  // Minimal POA IPC handlers for renderer compatibility
+  ipcMain.handle('poa:get-config', async () => {
+    try {
+      const settings = await services.settingsManager.getSettings();
+      const ipfsConfig = await services.ipfsManager.getConfig();
+      const active = await services.spkClient.getActiveAccount();
+      return {
+        autoStart: Boolean(settings.autoStartStorage),
+        account: active?.username || active || null,
+        ipfsHost: ipfsConfig.host || '127.0.0.1',
+        ipfsPort: ipfsConfig.port || 5001,
+        spkApiUrl: services.spkClient.config?.spkNode || 'https://spktest.dlux.io'
+      };
+    } catch (e) {
+      return {
+        autoStart: false,
+        account: null,
+        ipfsHost: '127.0.0.1',
+        ipfsPort: 5001,
+        spkApiUrl: 'https://spktest.dlux.io'
+      };
+    }
+  });
+
+  ipcMain.handle('poa:update-config', async (event, config) => {
+    try {
+      const updates = {};
+      if (Object.prototype.hasOwnProperty.call(config || {}, 'autoStart')) {
+        updates.autoStartStorage = Boolean(config.autoStart);
+      }
+      if (Object.keys(updates).length) {
+        await services.settingsManager.updateSettings(updates);
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('poa:get-status', async () => {
+    try {
+      const status = await services.storageNode.getStatus();
+      return { initialized: true, running: Boolean(status.running), ...status };
+    } catch (e) {
+      return { initialized: false, running: false };
+    }
+  });
+
   ipcMain.handle('spk:generateKeyPair', async () => {
     try {
       const keyPair = services.spkClient.constructor.generateKeyPair();

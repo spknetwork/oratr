@@ -51,6 +51,7 @@
     "dmg-license": "^1.0.11"
   },
   "dependencies": {
+    "2": "^3.0.0",
     "@disregardfiat/proofofaccess": "0.4.5",
     "@disregardfiat/spk-js": "^1.0.0",
     "@hiveio/hive-js": "^2.0.8",
@@ -62,11 +63,11 @@
     "hive-tx": "^4.0.6",
     "ipfs-only-hash": "^4.0.0",
     "kubo-rpc-client": "^3.0.2",
-    "webdav-server": "^2.6.2",
     "p-queue": "^7.4.1",
     "tar": "^6.2.0",
     "unzipper": "^0.10.14",
     "uuid": "^9.0.1",
+    "webdav-server": "^2.6.2",
     "which": "^4.0.0",
     "winston": "^3.11.0",
     "ws": "^8.18.3"
