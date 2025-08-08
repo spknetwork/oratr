@@ -20,10 +20,44 @@ class WebDavService {
       requireAuthentification: false
     });
 
-    // Directory listing handler (read-only)
+    // Directory and file handlers (read-only)
     server.beforeRequest(async (ctx, next) => {
-      // Only intercept GET/PROPFIND for now; others pass through to default which will 405
-      if (ctx.request.method === 'GET' && !ctx.requested.path.isRoot()) {
+      const method = ctx.request.method || '';
+      // Handle PROPFIND for directory listings
+      if (method === 'PROPFIND') {
+        try {
+          const parts = ctx.requested.path.paths; // ['', 'username', '...'] already split by lib
+          if (parts.length === 0) {
+            // Root: return empty collection
+            const xml = buildMultiStatus('/', [], true);
+            ctx.setCode(webdav.HTTPCodes.MultiStatus);
+            ctx.response.setHeader('Content-Type', 'application/xml; charset="utf-8"');
+            ctx.response.write(xml);
+            return ctx.end();
+          }
+          const username = parts[0];
+          const subPath = parts.slice(1).join('/');
+          // Fetch directory JSON from Honeygraph
+          const apiUrl = subPath
+            ? `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/${encodeURI(subPath)}`
+            : `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/`;
+          const { data } = await axios.get(apiUrl, { headers: { Accept: 'application/json' } });
+          const children = Array.isArray(data.contents) ? data.contents : [];
+          // Build WebDAV multi-status XML
+          const hrefBase = '/' + [username].concat(subPath ? [subPath] : []).join('/') + '/';
+          const xml = buildMultiStatus(hrefBase, children, true);
+          ctx.setCode(webdav.HTTPCodes.MultiStatus);
+          ctx.response.setHeader('Content-Type', 'application/xml; charset="utf-8"');
+          ctx.response.write(xml);
+          return ctx.end();
+        } catch (e) {
+          ctx.setCode(webdav.HTTPCodes.NotFound);
+          return ctx.end();
+        }
+      }
+
+      // Only intercept GET for file proxying
+      if (method === 'GET' && !ctx.requested.path.isRoot()) {
         try {
           const pathParts = ctx.requested.path.paths;
           // path: /<username>/<optional path>
@@ -53,15 +87,63 @@ class WebDavService {
           if (req.method === 'GET') {
             const parsed = new URL(req.url, 'http://127.0.0.1');
             const parts = parsed.pathname.split('/').filter(Boolean);
-            if (parts.length >= 2) {
+            // Directory listing in browser
+            if (parts.length >= 1) {
               const username = parts[0];
               const subPath = parts.slice(1).join('/');
-              if (username && subPath) {
-                const target = `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/${encodeURI(subPath)}`;
-                // Derive a friendly filename from the path and set Content-Disposition to preserve it
-                const rawName = decodeURIComponent(subPath.split('/').pop() || 'download');
-                const safeName = rawName.replace(/[^A-Za-z0-9._ -]/g, '_');
+              if (!username) {
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                res.end('<h1>Oratr WebDAV</h1><p>Provide /:username or mount via WebDAV client.</p>');
+                return;
+              }
 
+              // If no file component, or URL ends with '/', treat as directory and render HTML
+              const isDirRequest = parts.length === 1 || parsed.pathname.endsWith('/');
+              if (isDirRequest) {
+                const apiUrl = subPath
+                  ? `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/${encodeURI(subPath)}`
+                  : `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/`;
+                try {
+                  const { data } = await axios.get(apiUrl, { headers: { Accept: 'application/json' } });
+                  if (data && data.type === 'directory' && Array.isArray(data.contents)) {
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                    const title = `/${username}/${subPath || ''}`;
+                    const list = data.contents
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map(item => {
+                        const dir = item.type === 'directory';
+                        const display = dir ? item.name : combineName(item.name, item.extension);
+                        const hrefName = dir ? item.name : combineName(item.name, item.extension);
+                        const href = '/' + [username].concat(subPath ? [subPath] : []).concat([encodeURIComponent(hrefName) + (dir ? '/' : '')]).join('/');
+                        const icon = dir ? '📁' : '📄';
+                        const size = dir ? '' : ` (${item.size || 0} bytes)`;
+                        return `<li>${icon} <a href="${href}">${escapeHtml(display)}</a>${size}</li>`;
+                      })
+                      .join('\n');
+                    const upHref = parts.length > 1 ? '/' + [username].concat(parts.slice(1, -1)).join('/') + '/' : '/';
+                    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body>
+                      <h1>Index of ${escapeHtml(title)}</h1>
+                      <p><a href="${upHref}">⬆ Up</a></p>
+                      <ul>${list}</ul>
+                    </body></html>`;
+                    res.end(html);
+                    return;
+                  }
+                } catch (e) {
+                  // fall through to file handling/404
+                }
+              }
+
+              // File request: stream and preserve filename; map trailing '.' to no extension on upstream
+              if (username && subPath) {
+                const segs = subPath.split('/');
+                const last = segs.pop() || '';
+                const upstreamLast = last.endsWith('.') ? last.slice(0, -1) : last;
+                const target = `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/${encodeURI(segs.concat([upstreamLast]).join('/'))}`;
+                const rawName = decodeURIComponent(last || 'download');
+                const safeName = rawName.replace(/[^A-Za-z0-9._ -]/g, '_');
                 try {
                   const upstream = await axios.get(target, { responseType: 'stream', maxRedirects: 5 });
                   res.statusCode = upstream.status;
@@ -107,6 +189,52 @@ class WebDavService {
     ipcMain.handle('webdav:stop', async () => this.stop());
     ipcMain.handle('webdav:status', async () => ({ running: !!this.httpServer, port: this.port }));
   }
+}
+
+function xmlEscape(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeHtml(s) {
+  return xmlEscape(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Build WebDAV multistatus for a directory listing
+function buildMultiStatus(hrefBase, items, includeSelf) {
+  const responses = [];
+  if (includeSelf) {
+    responses.push(responseXml(hrefBase, true));
+  }
+  for (const item of items) {
+    const isDir = item.type === 'directory';
+    const name = item.name || 'unknown';
+    const href = hrefBase + encodeURIComponent(name) + (isDir ? '/' : '');
+    const size = isDir ? 0 : item.size || 0;
+    responses.push(responseXml(href, isDir, size, item.mimeType || 'application/octet-stream'));
+  }
+  return `<?xml version="1.0" encoding="utf-8"?>
+<d:multistatus xmlns:d="DAV:">
+${responses.join('\n')}
+</d:multistatus>`;
+}
+
+function responseXml(href, isCollection, size = 0, contentType = 'application/octet-stream') {
+  return `<d:response>
+  <d:href>${xmlEscape(href)}</d:href>
+  <d:propstat>
+    <d:prop>
+      <d:displayname>${xmlEscape(decodeURIComponent(href.split('/').filter(Boolean).pop() || ''))}</d:displayname>
+      ${isCollection ? '<d:resourcetype><d:collection/></d:resourcetype>' : '<d:resourcetype/>'}
+      ${!isCollection ? `<d:getcontentlength>${size}</d:getcontentlength>
+      <d:getcontenttype>${xmlEscape(contentType)}</d:getcontenttype>` : ''}
+    </d:prop>
+    <d:status>HTTP/1.1 200 OK</d:status>
+  </d:propstat>
+</d:response>`;
+}
+
+function combineName(name, extension) {
+  return extension ? `${name}.${extension}` : `${name}`;
 }
 
 module.exports = WebDavService;
