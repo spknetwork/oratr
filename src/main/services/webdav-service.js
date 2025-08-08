@@ -47,7 +47,7 @@ class WebDavService {
 
     this.server = server;
     await new Promise((resolve) => {
-      this.httpServer = http.createServer((req, res) => {
+      this.httpServer = http.createServer(async (req, res) => {
         try {
           // Simple GET redirect handler before WebDAV processing
           if (req.method === 'GET') {
@@ -58,9 +58,23 @@ class WebDavService {
               const subPath = parts.slice(1).join('/');
               if (username && subPath) {
                 const target = `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/${encodeURI(subPath)}`;
-                res.statusCode = 302;
-                res.setHeader('Location', target);
-                res.end();
+                // Derive a friendly filename from the path and set Content-Disposition to preserve it
+                const rawName = decodeURIComponent(subPath.split('/').pop() || 'download');
+                const safeName = rawName.replace(/[^A-Za-z0-9._ -]/g, '_');
+
+                try {
+                  const upstream = await axios.get(target, { responseType: 'stream', maxRedirects: 5 });
+                  res.statusCode = upstream.status;
+                  const ct = upstream.headers['content-type'] || 'application/octet-stream';
+                  const cl = upstream.headers['content-length'];
+                  res.setHeader('Content-Type', ct);
+                  if (cl) res.setHeader('Content-Length', cl);
+                  res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+                  upstream.data.pipe(res);
+                } catch (e) {
+                  res.statusCode = 404;
+                  res.end('Not Found');
+                }
                 return;
               }
             }
