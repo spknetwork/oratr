@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
+const FFmpegBinaryManager = require('../binaries/ffmpeg-binary');
 
 /**
  * Video Transcoder using native FFmpeg
@@ -13,9 +14,12 @@ const { v4: uuidv4 } = require('uuid');
 class Transcoder extends EventEmitter {
   constructor(config = {}) {
     super();
-    // Resolve ffmpeg/ffprobe paths in order: config → packaged bin → system PATH
-    this.ffmpegPath = config.ffmpegPath || this.resolveBinaryPath('ffmpeg');
-    this.ffprobePath = config.ffprobePath || this.resolveBinaryPath('ffprobe');
+    // Use bundled FFmpeg binaries by default
+    const binaryManager = new FFmpegBinaryManager();
+    
+    // Resolve ffmpeg/ffprobe paths in order: config → bundled binaries → packaged bin → system PATH
+    this.ffmpegPath = config.ffmpegPath || this.resolveBinaryPath('ffmpeg', binaryManager);
+    this.ffprobePath = config.ffprobePath || this.resolveBinaryPath('ffprobe', binaryManager);
     this.tempDir = config.tempDir || path.join(os.tmpdir(), 'spk-transcode');
     this.activeJobs = new Map();
     this.isAvailable = null;
@@ -25,8 +29,19 @@ class Transcoder extends EventEmitter {
     ffmpeg.setFfprobePath(this.ffprobePath);
   }
 
-  resolveBinaryPath(binaryName) {
-    // Look in app resources/bin first (packaged with electron-builder)
+  resolveBinaryPath(binaryName, binaryManager) {
+    // First try to use bundled binaries
+    try {
+      const paths = binaryManager.getBinaryPaths();
+      if (binaryName === 'ffmpeg' && require('fs').existsSync(paths.ffmpegPath)) {
+        return paths.ffmpegPath;
+      }
+      if (binaryName === 'ffprobe' && require('fs').existsSync(paths.ffprobePath)) {
+        return paths.ffprobePath;
+      }
+    } catch {}
+
+    // Look in app resources/bin (for electron-builder packaging)
     const possible = [];
     const appRoot = path.resolve(__dirname, '../../../');
     possible.push(path.join(appRoot, 'resources', 'bin', binaryName));
@@ -40,7 +55,7 @@ class Transcoder extends EventEmitter {
     try {
       return which.sync(binaryName);
     } catch {
-      throw new Error(`${binaryName} not found. Please install it or provide a path via config.{ffmpegPath,ffprobePath}`);
+      throw new Error(`${binaryName} not found. Please run 'npm run install-ffmpeg' or install FFmpeg manually.`);
     }
   }
 

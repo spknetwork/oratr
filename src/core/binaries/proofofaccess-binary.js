@@ -54,6 +54,14 @@ class ProofOfAccessBinary {
     // Try to use @disregardfiat/proofofaccess if installed
     try {
       const poaPackage = require('@disregardfiat/proofofaccess');
+      // Prefer official API
+      if (typeof poaPackage.getBinaryPath === 'function') {
+        const pkgPath = poaPackage.getBinaryPath();
+        if (pkgPath && fs.existsSync(pkgPath)) {
+          return pkgPath;
+        }
+      }
+      // Fallback to .path if older shim is in use
       if (poaPackage.path && fs.existsSync(poaPackage.path)) {
         return poaPackage.path;
       }

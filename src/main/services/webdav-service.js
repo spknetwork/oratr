@@ -20,23 +20,36 @@ class WebDavService {
       requireAuthentification: false
     });
 
-    // Directory and file handlers (read-only)
+    // Directory and file handlers (read-only) + permissive Basic auth
     server.beforeRequest(async (ctx, next) => {
       const method = ctx.request.method || '';
+      // If no Authorization provided, challenge with Basic to satisfy DAV clients
+      const authHeader = (ctx.request && ctx.request.headers && (ctx.request.headers.authorization || ctx.request.headers.Authorization)) || null;
+      if (!authHeader && (method === 'PROPFIND' || method === 'HEAD' || method === 'GET')) {
+        ctx.setCode(webdav.HTTPCodes.Unauthorized);
+        ctx.response.setHeader('WWW-Authenticate', 'Basic realm="Oratr", charset="UTF-8"');
+        ctx.response.setHeader('DAV', '1,2');
+        ctx.response.setHeader('MS-Author-Via', 'DAV');
+        return ctx.end();
+      }
       // Handle PROPFIND for directory listings
-      if (method === 'PROPFIND') {
+      if (method === 'PROPFIND' || method === 'HEAD') {
         try {
           const parts = ctx.requested.path.paths; // ['', 'username', '...'] already split by lib
           if (parts.length === 0) {
             // Root: return empty collection
-            const xml = buildMultiStatus('/', [], true);
+          const xml = buildMultiStatus('/', [], true);
             ctx.setCode(webdav.HTTPCodes.MultiStatus);
-            ctx.response.setHeader('Content-Type', 'application/xml; charset="utf-8"');
-            ctx.response.write(xml);
+          ctx.response.setHeader('Content-Type', 'text/xml; charset="utf-8"');
+          ctx.response.setHeader('DAV', '1,2');
+          ctx.response.setHeader('MS-Author-Via', 'DAV');
+          ctx.response.setHeader('Content-Length', Buffer.byteLength(xml, 'utf8'));
+            if (method !== 'HEAD') ctx.response.write(xml);
             return ctx.end();
           }
           const username = parts[0];
           const subPath = parts.slice(1).join('/');
+          // Normalize: ensure directory hrefs end with slash, regardless of client input
           // Fetch directory JSON from Honeygraph
           const apiUrl = subPath
             ? `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/${encodeURI(subPath)}`
@@ -47,8 +60,11 @@ class WebDavService {
           const hrefBase = '/' + [username].concat(subPath ? [subPath] : []).join('/') + '/';
           const xml = buildMultiStatus(hrefBase, children, true);
           ctx.setCode(webdav.HTTPCodes.MultiStatus);
-          ctx.response.setHeader('Content-Type', 'application/xml; charset="utf-8"');
-          ctx.response.write(xml);
+          ctx.response.setHeader('Content-Type', 'text/xml; charset="utf-8"');
+          ctx.response.setHeader('DAV', '1,2');
+          ctx.response.setHeader('MS-Author-Via', 'DAV');
+          ctx.response.setHeader('Content-Length', Buffer.byteLength(xml, 'utf8'));
+          if (method !== 'HEAD') ctx.response.write(xml);
           return ctx.end();
         } catch (e) {
           ctx.setCode(webdav.HTTPCodes.NotFound);
@@ -83,6 +99,18 @@ class WebDavService {
     await new Promise((resolve) => {
       this.httpServer = http.createServer(async (req, res) => {
         try {
+          // OPTIONS for DAV capability probing
+          if (req.method === 'OPTIONS') {
+            res.statusCode = 200;
+            res.setHeader('DAV', '1,2');
+            res.setHeader('MS-Author-Via', 'DAV');
+            res.setHeader('Allow', 'OPTIONS, PROPFIND, GET, HEAD');
+            res.setHeader('Accept-Ranges', 'bytes');
+            res.setHeader('Content-Length', '0');
+            res.end();
+            return;
+          }
+
           // Simple GET redirect handler before WebDAV processing
           if (req.method === 'GET') {
             const parsed = new URL(req.url, 'http://127.0.0.1');
@@ -133,6 +161,22 @@ class WebDavService {
                   }
                 } catch (e) {
                   // fall through to file handling/404
+                }
+              }
+
+              // If no trailing slash but target is a directory, redirect to slash-suffixed path for clients that drop it
+              if (username && subPath && !parsed.pathname.endsWith('/')) {
+                try {
+                  const probeUrl = `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/${encodeURI(subPath)}/`;
+                  const { data: probe } = await axios.get(probeUrl, { headers: { Accept: 'application/json' } });
+                  if (probe && probe.type === 'directory') {
+                    res.statusCode = 301;
+                    res.setHeader('Location', `/${username}/${subPath}/`);
+                    res.end();
+                    return;
+                  }
+                } catch (_) {
+                  // ignore and fall through to file handling
                 }
               }
 

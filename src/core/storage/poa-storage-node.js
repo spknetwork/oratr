@@ -1,6 +1,7 @@
 const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
+const fsConstants = require('fs').constants;
 const path = require('path');
 const os = require('os');
 const WebSocket = require('ws');
@@ -60,10 +61,14 @@ class POAStorageNode extends EventEmitter {
     try {
       // Use the NPM package binary
       const poa = require('@disregardfiat/proofofaccess');
-      this.config.binaryPath = poa.path;
-      return poa.path;
+      const resolvedPath = typeof poa.getBinaryPath === 'function' ? poa.getBinaryPath() : poa.path;
+      if (!resolvedPath) {
+        throw new Error('ProofOfAccess package did not provide a binary path');
+      }
+      this.config.binaryPath = resolvedPath;
+      return resolvedPath;
     } catch (error) {
-      throw new Error('ProofOfAccess package not installed. Run: npm install @disregardfiat/proofofaccess');
+      throw new Error('ProofOfAccess package not installed or missing binaries. Run: npm install @disregardfiat/proofofaccess');
     }
   }
   
@@ -73,7 +78,12 @@ class POAStorageNode extends EventEmitter {
   async checkBinary() {
     try {
       const binaryPath = this.getBinaryPath();
-      await fs.access(binaryPath, fs.constants.X_OK);
+      // On some platforms X_OK might not be meaningful; access without mode first
+      await fs.access(binaryPath);
+      // Additionally, if constants are available, verify executable bit on POSIX
+      if (process.platform !== 'win32' && fsConstants && typeof fsConstants.X_OK !== 'undefined') {
+        await fs.access(binaryPath, fsConstants.X_OK);
+      }
       return true;
     } catch (error) {
       return false;

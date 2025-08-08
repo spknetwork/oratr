@@ -14,12 +14,13 @@
     "test:e2e": "cross-env NODE_OPTIONS=\"--experimental-vm-modules\" jest --testPathPattern=test/e2e --runInBand",
     "lint": "eslint src test --ext .js",
     "lint:fix": "eslint src test --ext .js --fix",
-    "prebuild": "node build/download-binaries.js && node build/download-ipfs.js",
+    "install-ffmpeg": "node scripts/install-ffmpeg.js",
+    "prebuild": "npm run install-ffmpeg && node build/download-binaries.js && node build/download-ipfs.js",
     "build": "electron-builder",
     "build:win": "npm run prebuild && electron-builder --win --publish=never",
     "build:mac": "npm run prebuild && electron-builder --mac --publish=never",
     "build:linux": "npm run prebuild && electron-builder --linux --publish=never",
-    "postinstall": "electron-builder install-app-deps && node scripts/fix-perms.js"
+    "postinstall": "electron-builder install-app-deps && node scripts/fix-perms.js && node scripts/install-ffmpeg.js"
   },
   "keywords": [
     "oratr",
@@ -50,7 +51,7 @@
     "dmg-license": "^1.0.11"
   },
   "dependencies": {
-    "@disregardfiat/proofofaccess": "0.4.1",
+    "@disregardfiat/proofofaccess": "0.4.5",
     "@disregardfiat/spk-js": "^1.0.0",
     "@hiveio/hive-js": "^2.0.8",
     "axios": "^1.6.5",
@@ -63,7 +64,10 @@
     "kubo-rpc-client": "^3.0.2",
     "webdav-server": "^2.6.2",
     "p-queue": "^7.4.1",
+    "tar": "^6.2.0",
+    "unzipper": "^0.10.14",
     "uuid": "^9.0.1",
+    "which": "^4.0.0",
     "winston": "^3.11.0",
     "ws": "^8.18.3"
   },

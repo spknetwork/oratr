@@ -944,7 +944,7 @@ function setupIPCHandlers() {
   ipcMain.handle('storage:getStatus', async () => {
     console.log('[DEBUG] storage:getStatus called');
     // Always check the actual storage node status first
-    const actualStatus = services.storageNode.getStatus();
+    const actualStatus = await services.storageNode.getStatus();
     console.log('[DEBUG] Actual storage status:', actualStatus);
     
     // If actually running, return that
