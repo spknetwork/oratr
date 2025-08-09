@@ -250,6 +250,17 @@ async function initializeServices() {
   
   await services.spkClient.initialize();
 
+  // Apply wallet lock settings to account manager at startup
+  try {
+    const saved = services.settingsManager.getSettings();
+    if (saved && saved.walletLock) {
+      services.spkClient.accountManager.sessionDuration = Number(saved.walletLock.durationMs) || (15 * 60 * 1000);
+      services.spkClient.accountManager.sessionMode = String(saved.walletLock.mode || 'inactivity');
+    }
+  } catch (e) {
+    console.warn('Failed to apply wallet lock settings on init:', e);
+  }
+
   // Initialize WebDAV service and honor settings
   services.webdav = new WebDavService(services);
   // Ensure IPC endpoints are available even if server is not started yet
