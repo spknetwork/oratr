@@ -469,6 +469,7 @@ function setupIPCHandlers() {
   ipcMain.handle('account:add', async (event, username, keys) => {
     try {
       const account = await services.spkClient.addAccount(username, keys);
+      try { services.spkClient.accountManager.updateLastActivity(); } catch (_) {}
       return { success: true, account };
     } catch (error) {
       return { success: false, error: error.message };
@@ -478,6 +479,7 @@ function setupIPCHandlers() {
   ipcMain.handle('account:importFromMaster', async (event, username, masterPassword) => {
     try {
       const account = await services.spkClient.importAccountFromMaster(username, masterPassword);
+      try { services.spkClient.accountManager.updateLastActivity(); } catch (_) {}
       return { success: true, account };
     } catch (error) {
       return { success: false, error: error.message };
@@ -487,6 +489,7 @@ function setupIPCHandlers() {
   ipcMain.handle('account:remove', async (event, username) => {
     try {
       await services.spkClient.removeAccount(username);
+      try { services.spkClient.accountManager.updateLastActivity(); } catch (_) {}
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -496,6 +499,7 @@ function setupIPCHandlers() {
   ipcMain.handle('account:setActive', async (event, username) => {
     try {
       const account = await services.spkClient.setActiveAccount(username);
+      try { services.spkClient.accountManager.updateLastActivity(); } catch (_) {}
       return { success: true, account };
     } catch (error) {
       return { success: false, error: error.message };
@@ -506,17 +510,45 @@ function setupIPCHandlers() {
     return services.spkClient.listAccounts();
   });
 
-  ipcMain.handle('account:getActive', async () => {
-    const activeAccount = services.spkClient.getActiveAccount();
-    if (activeAccount) {
-      return { success: true, username: activeAccount.username, ...activeAccount };
+  // Delete a specific key from an account
+  ipcMain.handle('account:deleteKey', async (event, username, keyType) => {
+    try {
+      await services.spkClient.accountManager.deleteKey(username, keyType);
+      try { services.spkClient.accountManager.updateLastActivity(); } catch (_) {}
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
-    return null;
+  });
+
+  // Export posting key to settings for automation
+  ipcMain.handle('account:exportPostingForAutomation', async (event, username) => {
+    try {
+      await services.spkClient.accountManager.exportPostingForAutomation(username, services.settingsManager);
+      try { services.spkClient.accountManager.updateLastActivity(); } catch (_) {}
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('account:getActive', async () => {
+    const active = services.spkClient.getActiveAccount();
+    if (!active) return null;
+    // active may be a username string; try to get account info
+    try {
+      const info = await services.spkClient.accountManager.getAccount(active);
+      if (info) {
+        return { success: true, username: info.username, ...info };
+      }
+    } catch (_) {}
+    return { success: true, username: typeof active === 'string' ? active : String(active) };
   });
 
   ipcMain.handle('account:export', async (event, username, exportPin) => {
     try {
       const exportData = await services.spkClient.exportAccount(username, exportPin);
+      try { services.spkClient.accountManager.updateLastActivity(); } catch (_) {}
       return { success: true, exportData };
     } catch (error) {
       return { success: false, error: error.message };
@@ -526,6 +558,7 @@ function setupIPCHandlers() {
   ipcMain.handle('account:import', async (event, exportData, importPin) => {
     try {
       const usernames = await services.spkClient.importAccount(exportData, importPin);
+      try { services.spkClient.accountManager.updateLastActivity(); } catch (_) {}
       return { success: true, usernames };
     } catch (error) {
       return { success: false, error: error.message };
@@ -1124,6 +1157,25 @@ function setupIPCHandlers() {
   });
 
   // SPK Network registration
+  ipcMain.handle('spk:registerPublicKey', async (event, username, pubKey) => {
+    try {
+      const spk = await services.spkClient.getSpkInstance(username);
+      // Prefer explicit pubKey if provided; spk-js may ignore and derive from account
+      if (pubKey && spk?.account?.registerPublicKey) {
+        await spk.account.registerPublicKey(pubKey);
+        return { success: true };
+      }
+      if (services.spkClient.registerPublicKey) {
+        const result = await services.spkClient.registerPublicKey(username);
+        return result;
+      }
+      // Fallback
+      await spk.account.registerPublicKey();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
   ipcMain.handle('spk:registerStorage', async (event, ipfsId, domain, price, options) => {
     try {
       const result = await services.spkClient.registerStorageNode(ipfsId, domain, price, options);
@@ -1720,6 +1772,25 @@ function setupServiceHandlers() {
   ipcMain.handle('settings:set', async (event, { key, value }) => {
     await services.settingsManager.set(key, value);
     // React to some settings immediately
+    if (key === 'walletLock.durationMs') {
+      try {
+        // Update session duration in account manager
+        services.spkClient.accountManager.sessionDuration = Number(value) || (15 * 60 * 1000);
+        // Restart timer if unlocked
+        if (services.spkClient.accountManager.isUnlocked()) {
+          services.spkClient.accountManager.startSessionTimer();
+        }
+      } catch (e) {
+        console.warn('Failed to apply walletLock.durationMs:', e);
+      }
+    }
+    if (key === 'walletLock.mode') {
+      try {
+        services.spkClient.accountManager.sessionMode = String(value) === 'continuous' ? 'continuous' : 'inactivity';
+      } catch (e) {
+        console.warn('Failed to apply walletLock.mode:', e);
+      }
+    }
     if (key === 'isTestnet') {
       const networkSettings = services.settingsManager.getNetworkSettings();
       services.spkClient.config = {
@@ -2072,6 +2143,15 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   // Don't quit app when windows are closed - keep running in tray
   // Users can quit via tray menu or explicitly
+  // Optionally lock wallet when window closes
+  try {
+    const s = services.settingsManager.getSettings();
+    if (s.walletLock && s.walletLock.lockOnWindowClose) {
+      services.spkClient.accountManager.lock();
+    }
+  } catch (e) {
+    console.warn('Failed to apply lockOnWindowClose:', e);
+  }
 });
 
 app.on('activate', () => {

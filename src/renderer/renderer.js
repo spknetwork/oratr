@@ -3148,6 +3148,22 @@ async function registerStorageNode() {
         return;
     }
     
+    // Ensure sufficient LARYNX balance (>= 2000)
+    try {
+        const active = await window.api.account.getActive();
+        if (active && active.username) {
+            const stats = await window.api.spk.getNetworkStats().catch(()=>null);
+            const acctReg = await window.api.spk.checkRegistration(active.username).catch(()=>null);
+            // Try to get balances using existing path
+            const balancesResp = await window.api.balance.get(true).catch(()=>null);
+            const larynxBalance = balancesResp && balancesResp.success && balancesResp.balances ? (balancesResp.balances.LARYNX || balancesResp.balances.larynx || 0) : 0;
+            if (Number(larynxBalance) < 2000) {
+                showNotification('You need at least 2000 LARYNX to register a storage node.', 'warning');
+                return;
+            }
+        }
+    } catch (_) {}
+
     // Get IPFS node ID
     const ipfsInfo = await window.api.ipfs.getNodeInfo();
     if (!ipfsInfo || !ipfsInfo.id) {

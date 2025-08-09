@@ -193,6 +193,46 @@ main {
     cursor: pointer;
 }
 
+/* Wallet session UI */
+.wallet-session {
+    margin-top: 0.5rem;
+}
+.wallet-session__scale {
+    padding: 0.5rem 0.25rem 0.25rem;
+}
+.wallet-session__label {
+    display: block;
+    margin-bottom: 6px;
+    color: #c8d0d8;
+}
+.wallet-session__range {
+    width: 100%;
+    accent-color: #4CAF50;
+}
+.wallet-session__ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    opacity: 0.8;
+    margin-top: 6px;
+}
+.wallet-session__desc {
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: #9aa3ad;
+}
+.wallet-session__flags {
+    display: flex;
+    gap: 1.25rem;
+    align-items: center;
+    margin-top: 10px;
+}
+.wallet-session__flags .flag {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 /* Sidebar account block */
 .sidebar-account {
     display: grid;

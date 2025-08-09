@@ -62,6 +62,8 @@ class AuthComponent {
       this.isUnlocked = true;
       this.accounts = accounts;
       // Don't automatically show account manager - let the main renderer handle closing the overlay
+      // After unlock, prompt for pubkey registration if needed
+      setTimeout(() => this.promptRegisterPubKeyIfNeeded().catch(()=>{}), 50);
     });
 
     window.api.on('spk:accounts-locked', () => {
@@ -78,7 +80,100 @@ class AuthComponent {
     window.api.on('spk:active-account-changed', (username) => {
       this.activeAccount = username;
       this.updateActiveAccountDisplay();
+      // Re-check registration on active account change
+      setTimeout(() => this.promptRegisterPubKeyIfNeeded().catch(()=>{}), 50);
     });
+  }
+
+  async promptRegisterPubKeyIfNeeded() {
+    try {
+      const active = await window.api.account.getActive();
+      if (!active || !active.username) return;
+      const res = await window.api.spk.checkRegistration(active.username);
+      if (!res || !res.success) return;
+      if ((!res.registered) && res.data && res.data.pubKey === 'NA') {
+        this.showPubKeyRegistrationPrompt(active.username);
+      }
+    } catch (_) {}
+  }
+
+  showPubKeyRegistrationPrompt(username) {
+    const overlay = document.createElement('div');
+    overlay.className = 'session-expired-overlay';
+    overlay.innerHTML = `
+      <div class="session-expired-dialog" style="max-width:520px;">
+        <h3>Register Posting Public Key</h3>
+        <p>Your Hive account @${username} has no posting public key registered on SPK. Register one now so apps can verify your signatures.</p>
+        <div id="pubkey-choice" style="margin: 12px 0;">
+          <button class="btn" id="fetch-posting-pubkeys">Fetch available posting pubkeys</button>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="skip-pubkey">Maybe later</button>
+          <button class="btn btn-primary" id="register-pubkey" disabled>Register Selected</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const fetchBtn = overlay.querySelector('#fetch-posting-pubkeys');
+    const registerBtn = overlay.querySelector('#register-pubkey');
+    const skipBtn = overlay.querySelector('#skip-pubkey');
+    const choiceDiv = overlay.querySelector('#pubkey-choice');
+
+    const renderChoices = (pubkeys) => {
+      if (!pubkeys || pubkeys.length === 0) {
+        choiceDiv.innerHTML = '<p style="color:#f44336;">No posting public keys found on-chain for this account.</p>';
+        return;
+      }
+      choiceDiv.innerHTML = `
+        <label style="display:block; margin-bottom:6px;">Select posting public key:</label>
+        <select id="posting-pubkey-select" style="width:100%; padding:8px; background:#1a1a1a; color:#e0e0e0; border:1px solid #333; border-radius:4px;">
+          ${pubkeys.map(k => `<option value="${k}">${k}</option>`).join('')}
+        </select>
+      `;
+      registerBtn.disabled = false;
+    };
+
+    fetchBtn.addEventListener('click', async () => {
+      try {
+        const pubs = await this.fetchHivePostingPubKeys(username);
+        renderChoices(pubs);
+      } catch (e) {
+        choiceDiv.innerHTML = `<p style="color:#f44336;">Failed to fetch pubkeys: ${e.message}</p>`;
+      }
+    });
+
+    registerBtn.addEventListener('click', async () => {
+      const sel = overlay.querySelector('#posting-pubkey-select');
+      if (!sel || !sel.value) return;
+      try {
+        const result = await window.api.invoke('spk:registerPublicKey', username, sel.value);
+        if (result && result.success) {
+          overlay.remove();
+          alert('Public key registered successfully.');
+        } else {
+          alert(result && result.error ? result.error : 'Failed to register public key');
+        }
+      } catch (e) {
+        alert(e.message || 'Failed to register public key');
+      }
+    });
+
+    skipBtn.addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  }
+
+  async fetchHivePostingPubKeys(username) {
+    const response = await fetch('https://api.hive.blog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'condenser_api.get_accounts', params: [[username]], id: 1 })
+    });
+    const data = await response.json();
+    if (!data || !data.result || !data.result[0]) return [];
+    const account = data.result[0];
+    const auths = (account.posting && account.posting.key_auths) ? account.posting.key_auths : [];
+    return auths.map(a => a[0]);
   }
 
   /**
@@ -643,6 +738,28 @@ class AuthComponent {
           </div>
         </div>
         
+        <div class="accounts-section wallet-session">
+          <div class="section-title">
+            <h3>Wallet Session</h3>
+          </div>
+          <div class="wallet-session__scale">
+            <label for="wallet-lock-range" class="wallet-session__label">Wallet lock time</label>
+            <input id="wallet-lock-range" class="wallet-session__range" type="range" min="0" max="8" step="1">
+            <div class="wallet-session__ticks">
+              <span>1m</span><span>5m</span><span>10m</span><span>30m</span><span>1h</span><span>3h</span><span>6h</span><span>12h</span><span>24h</span>
+            </div>
+            <div id="wallet-lock-desc" class="wallet-session__desc"></div>
+          </div>
+          <div class="wallet-session__flags">
+            <label class="flag">
+              <input id="wallet-lock-mode" type="checkbox"> Inactivity-based timeout
+            </label>
+            <label class="flag">
+              <input id="wallet-lock-on-close" type="checkbox"> Lock when window closes
+            </label>
+          </div>
+        </div>
+
         <div class="auth-actions">
           <button class="btn btn-primary" id="add-account-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -672,6 +789,52 @@ class AuthComponent {
         </div>
       </div>
     `;
+
+    // Initialize wallet lock UI with current settings
+    try {
+      const s = await window.api.invoke('settings:get-all');
+      const mapIndexToMs = [1,5,10,30,60,180,360,720,1440].map(m=>m*60*1000);
+      const range = document.getElementById('wallet-lock-range');
+      const mode = document.getElementById('wallet-lock-mode');
+      const onClose = document.getElementById('wallet-lock-on-close');
+      const desc = document.getElementById('wallet-lock-desc');
+      const toHuman = (ms) => {
+        const m = Math.round(ms/60000);
+        if (m < 60) return `${m} minute${m===1?'':'s'}`;
+        const h = Math.round(m/60);
+        return `${h} hour${h===1?'':'s'}`;
+      };
+      const updateDesc = () => {
+        const ms = mapIndexToMs[Number(range.value)] || (15*60*1000);
+        const modeTxt = (mode && mode.checked) ? 'of inactivity' : 'continuous';
+        if (desc) desc.textContent = `Locks after ${toHuman(ms)} (${modeTxt})`;
+      };
+      if (range) {
+        const idx = Math.max(0, mapIndexToMs.findIndex(ms => ms === (s.walletLock?.durationMs || (15*60*1000))));
+        range.value = idx === -1 ? '2' : String(idx);
+        updateDesc();
+        range.oninput = async () => {
+          const ms = mapIndexToMs[Number(range.value)] || (15*60*1000);
+          await window.api.invoke('settings:set', { key: 'walletLock.durationMs', value: ms });
+          updateDesc();
+        };
+      }
+      if (mode) {
+        mode.checked = (s.walletLock?.mode || 'inactivity') === 'inactivity';
+        mode.onchange = async () => {
+          await window.api.invoke('settings:set', { key: 'walletLock.mode', value: mode.checked ? 'inactivity' : 'continuous' });
+          updateDesc();
+        };
+      }
+      if (onClose) {
+        onClose.checked = !!(s.walletLock?.lockOnWindowClose);
+        onClose.onchange = async () => {
+          await window.api.invoke('settings:set', { key: 'walletLock.lockOnWindowClose', value: !!onClose.checked });
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to init wallet lock UI:', e);
+    }
 
     // Use a simple approach - direct onclick assignment
     document.getElementById('lock-btn').onclick = function() {
@@ -759,31 +922,42 @@ class AuthComponent {
           <h3>Add or Update Keys</h3>
           <p class="hint">Enter only the keys you want to add or update. Leave blank to keep existing.</p>
           
-          ${!account.hasPosting ? `
-            <div class="form-group">
-              <label for="posting-key">Posting Key</label>
-              <input type="password" id="posting-key" name="posting-key">
-            </div>
-          ` : ''}
+          <div class="form-group">
+            <label for="posting-key">Posting Key ${account.hasPosting ? '(replace optional)' : ''}</label>
+            <input type="password" id="posting-key" name="posting-key" placeholder="Leave blank to keep current">
+          </div>
           
-          ${!account.hasActive ? `
-            <div class="form-group">
-              <label for="active-key">Active Key</label>
-              <input type="password" id="active-key" name="active-key">
-            </div>
-          ` : ''}
+          <div class="form-group">
+            <label for="active-key">Active Key ${account.hasActive ? '(replace optional)' : ''}</label>
+            <input type="password" id="active-key" name="active-key" placeholder="Leave blank to keep current">
+          </div>
           
-          ${!account.hasMemo ? `
-            <div class="form-group">
-              <label for="memo-key">Memo Key</label>
-              <input type="password" id="memo-key" name="memo-key">
-            </div>
-          ` : ''}
+          <div class="form-group">
+            <label for="memo-key">Memo Key ${account.hasMemo ? '(replace optional)' : ''}</label>
+            <input type="password" id="memo-key" name="memo-key" placeholder="Leave blank to keep current">
+          </div>
           
-          ${account.hasPosting && account.hasActive && account.hasMemo ? 
-            '<p class="info-message">This account has all keys configured.</p>' : 
-            '<button type="submit" class="btn btn-primary">Update Keys</button>'
-          }
+          <button type="submit" class="btn btn-primary">Update Keys</button>
+        </form>
+
+        <hr>
+
+        <div class="accounts-section">
+          <h3>Remove Keys</h3>
+          <p class="hint">Remove individual keys without deleting the account.</p>
+          <div class="account-keys">
+            <button class="btn btn-ghost btn-danger" id="delete-posting" ${account.hasPosting ? '' : 'disabled'}>Delete Posting Key</button>
+            <button class="btn btn-ghost btn-danger" id="delete-active" ${account.hasActive ? '' : 'disabled'}>Delete Active Key</button>
+            <button class="btn btn-ghost btn-danger" id="delete-memo" ${account.hasMemo ? '' : 'disabled'}>Delete Memo Key</button>
+          </div>
+        </div>
+
+        <hr>
+
+        <div class="accounts-section">
+          <h3>Automation</h3>
+          <p class="hint">Allow background automation with this account. Stores the posting key in settings for unattended operations.</p>
+          <button class="btn btn-warning" id="enable-automation">Enable Automation with @${username}</button>
         </form>
         
         <div id="error-message" class="error-message"></div>
@@ -798,26 +972,18 @@ class AuthComponent {
 
     // Update keys form
     const form = document.getElementById('update-keys-form');
-    if (form && !(account.hasPosting && account.hasActive && account.hasMemo)) {
+    if (form) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         
         const keys = {};
         
-        if (!account.hasPosting && document.getElementById('posting-key')) {
-          const value = document.getElementById('posting-key').value;
-          if (value) keys.posting = value;
-        }
-        
-        if (!account.hasActive && document.getElementById('active-key')) {
-          const value = document.getElementById('active-key').value;
-          if (value) keys.active = value;
-        }
-        
-        if (!account.hasMemo && document.getElementById('memo-key')) {
-          const value = document.getElementById('memo-key').value;
-          if (value) keys.memo = value;
-        }
+        const postingVal = document.getElementById('posting-key')?.value || '';
+        const activeVal = document.getElementById('active-key')?.value || '';
+        const memoVal = document.getElementById('memo-key')?.value || '';
+        if (postingVal) keys.posting = postingVal;
+        if (activeVal) keys.active = activeVal;
+        if (memoVal) keys.memo = memoVal;
         
         
         if (Object.keys(keys).length === 0) {
@@ -840,6 +1006,46 @@ class AuthComponent {
           }, 1500);
         } else {
           errorDiv.textContent = result.error || 'Failed to update keys';
+        }
+      });
+    }
+
+    // Delete individual keys
+    const bindDelete = (id, key) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('click', async () => {
+        if (!confirm(`Delete ${key} key from ${username}?`)) return;
+        try {
+          const res = await window.api.invoke('account:deleteKey', username, key);
+          if (res && res.success) {
+            this.showEditAccount(username);
+          } else {
+            alert(res.error || 'Failed to delete key');
+          }
+        } catch (e) {
+          alert(e.message || 'Failed to delete key');
+        }
+      });
+    };
+    bindDelete('delete-posting', 'posting');
+    bindDelete('delete-active', 'active');
+    bindDelete('delete-memo', 'memo');
+
+    // Enable automation (store posting key in settings.json securely)
+    const enableAuto = document.getElementById('enable-automation');
+    if (enableAuto) {
+      enableAuto.addEventListener('click', async () => {
+        if (!confirm('Store posting key in settings for background automation?')) return;
+        try {
+          const res = await window.api.invoke('account:exportPostingForAutomation', username);
+          if (res && res.success) {
+            alert('Automation enabled. Posting key stored for background operations.');
+          } else {
+            alert(res.error || 'Failed to enable automation');
+          }
+        } catch (e) {
+          alert(e.message || 'Failed to enable automation');
         }
       });
     }

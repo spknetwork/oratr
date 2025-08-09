@@ -64,7 +64,25 @@ class SettingsManager extends EventEmitter {
       webdavPort: 4819,
       webdavRequireAuth: false,
       webdavUsername: '',
-      webdavPassword: ''
+      webdavPassword: '',
+
+      // Wallet lock/session settings
+      walletLock: {
+        // Duration in milliseconds (default 15 minutes)
+        durationMs: 15 * 60 * 1000,
+        // Mode: 'inactivity' resets timer on use; 'continuous' does not reset
+        mode: 'inactivity',
+        // If true, lock accounts when all app windows are closed
+        lockOnWindowClose: true
+      },
+
+      // Automation settings (posting key export for unattended ops)
+      automation: {
+        enabled: false,
+        username: '',
+        postingKey: '',
+        createdAt: 0
+      }
     };
   }
 

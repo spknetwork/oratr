@@ -38,6 +38,9 @@ class AccountManager extends EventEmitter {
     this.sessionPin = null;
     this.sessionTimeout = null;
     this.sessionDuration = config.sessionDuration || 15 * 60 * 1000; // 15 minutes
+    // 'inactivity' resets timer on use; 'continuous' counts down regardless
+    this.sessionMode = config.sessionMode || 'inactivity';
+    this.lastActivityMs = 0;
 
     // Encryption settings
     this.pbkdf2Iterations = config.pbkdf2Iterations || 100000;
@@ -198,6 +201,51 @@ class AccountManager extends EventEmitter {
 
     this.emit(existingAccount ? 'account-updated' : 'account-added', username);
     return this.decrypted.accounts[username];
+  }
+
+  /**
+   * Delete a specific key from an account
+   */
+  async deleteKey(username, keyType) {
+    if (!this.sessionPin) {
+      throw new Error('Accounts locked. Please unlock first.');
+    }
+    const validKeys = ['posting', 'active', 'memo', 'owner'];
+    if (!validKeys.includes(keyType)) {
+      throw new Error('Invalid key type');
+    }
+    const account = this.decrypted.accounts[username];
+    if (!account) throw new Error('Account not found');
+    if (!account[keyType]) throw new Error(`${keyType} key not present`);
+    delete account[keyType];
+    if (account.publicKeys) delete account.publicKeys[keyType];
+    await this.saveAccounts();
+    this.emit('account-updated', username);
+    return true;
+  }
+
+  /**
+   * Export posting key to settings for automation use
+   */
+  async exportPostingForAutomation(username, settingsManager) {
+    if (!this.sessionPin) {
+      throw new Error('Accounts locked. Please unlock first.');
+    }
+    const account = this.decrypted.accounts[username];
+    if (!account || !account.posting) {
+      throw new Error('Posting key not found');
+    }
+    if (!settingsManager) {
+      throw new Error('Settings manager not available');
+    }
+    const automation = {
+      enabled: true,
+      username,
+      postingKey: account.posting,
+      createdAt: Date.now()
+    };
+    await settingsManager.updateSettings({ automation });
+    return true;
   }
 
   /**
@@ -702,9 +750,23 @@ class AccountManager extends EventEmitter {
   }
 
   resetSessionTimer() {
-    if (this.sessionPin) {
+    if (this.sessionPin && this.sessionMode === 'inactivity') {
       this.startSessionTimer();
     }
+  }
+
+  /**
+   * Update last activity timestamp and optionally reset timer
+   */
+  updateLastActivity() {
+    this.lastActivityMs = Date.now();
+    if (this.sessionMode === 'inactivity') {
+      this.resetSessionTimer();
+    }
+  }
+
+  getLastActivity() {
+    return this.lastActivityMs;
   }
 
   /**
