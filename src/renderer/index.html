@@ -41,8 +41,14 @@
                         </button>
                     </nav>
                     <div class="sidebar-footer">
-                        <button class="sidebar-btn" onclick="showAccountManager()">👤 Account</button>
-                        <button class="sidebar-btn" onclick="settingsModal.show()">⚙️ Settings</button>
+                        <div class="sidebar-account" onclick="showAccountManager()" title="View account">
+                            <img id="account-avatar" class="sidebar-avatar" src="../../resources/images/icons/tray/oratr_icon_alpha.png" alt="Account avatar" />
+                            <div class="sidebar-account-info">
+                                <div id="account-name">No account</div>
+                                <div id="account-balance" class="balance-mini"></div>
+                            </div>
+                            <button class="sidebar-gear" aria-label="Open settings" onclick="event.stopPropagation(); settingsModal.show()">⚙️</button>
+                        </div>
                     </div>
                 </aside>
 

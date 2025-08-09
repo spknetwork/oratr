@@ -459,14 +459,64 @@ function updateWalletLockStatus(locked) {
 function updateAccountDisplay() {
     const accountName = document.getElementById('account-name');
     const accountBalance = document.getElementById('account-balance');
-    
+    const avatarImg = document.getElementById('account-avatar');
+
     if (currentAccount) {
-        if (accountName) accountName.textContent = currentAccount;
+        if (accountName) accountName.textContent = `@${currentAccount}`;
+        if (avatarImg) updateAccountAvatar(currentAccount);
         // Balance will be updated by refreshBalance()
     } else {
         if (accountName) accountName.textContent = 'No account';
         if (accountBalance) accountBalance.innerHTML = '';
+        if (avatarImg) {
+            avatarImg.src = '../../resources/images/icons/tray/oratr_icon_alpha.png';
+        }
     }
+}
+
+async function updateAccountAvatar(username) {
+    try {
+        const url = await getHiveProfileAvatar(username);
+        const avatarImg = document.getElementById('account-avatar');
+        if (avatarImg && url) avatarImg.src = url;
+    } catch (e) {
+        // Fallback silently
+    }
+}
+
+async function getHiveProfileAvatar(username) {
+    // Query Hive for account profile image
+    const response = await fetch('https://api.hive.blog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'condenser_api.get_accounts',
+            params: [[username]],
+            id: 1
+        })
+    });
+    const data = await response.json();
+    if (!data || !data.result || !data.result[0]) return null;
+    const acct = data.result[0];
+    let profile = null;
+    try {
+        if (acct.posting_json_metadata) {
+            const pj = JSON.parse(acct.posting_json_metadata);
+            profile = pj.profile || pj;
+        }
+    } catch (_) {}
+    if (!profile) {
+        try {
+            if (acct.json_metadata) {
+                const jm = JSON.parse(acct.json_metadata);
+                profile = jm.profile || jm;
+            }
+        } catch (_) {}
+    }
+    const img = profile && (profile.profile_image || profile.image);
+    if (img && typeof img === 'string' && img.length > 3) return img;
+    return null;
 }
 
 // Show account manager

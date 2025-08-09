@@ -193,6 +193,64 @@ main {
     cursor: pointer;
 }
 
+/* Sidebar account block */
+.sidebar-account {
+    display: grid;
+    grid-template-columns: 36px 1fr 40px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: rgba(255,255,255,0.06);
+    color: #e6e8eb;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.sidebar-account:hover {
+    background: rgba(255,255,255,0.08);
+}
+
+.sidebar-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.2);
+    object-fit: cover;
+}
+
+.sidebar-account-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.sidebar-account-info #account-name {
+    font-size: 0.95rem;
+    color: #e6e8eb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-gear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: rgba(255,255,255,0.08);
+    color: #e6e8eb;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+}
+
+.sidebar-gear:hover {
+    background: rgba(255,255,255,0.12);
+    color: #4CAF50;
+    border-color: rgba(76,175,80,0.4);
+}
+
 .content-area {
     overflow: hidden;
     padding: 2rem; /* Preserve interior spacing moved from main */
