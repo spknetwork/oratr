@@ -250,9 +250,23 @@ async function initializeServices() {
   
   await services.spkClient.initialize();
 
-  // Initialize WebDAV service (read-only scaffold)
+  // Initialize WebDAV service and honor settings
   services.webdav = new WebDavService(services);
-  await services.webdav.start();
+  // Ensure IPC endpoints are available even if server is not started yet
+  try { services.webdav.registerIPC(); } catch (_) {}
+  try {
+    const saved = services.settingsManager.getSettings();
+    if (saved.webdavEnabled) {
+      await services.webdav.start({
+        port: saved.webdavPort || 4819,
+        requireAuth: !!saved.webdavRequireAuth,
+        username: saved.webdavUsername || '',
+        password: saved.webdavPassword || ''
+      });
+    }
+  } catch (e) {
+    console.error('Failed to start WebDAV service:', e);
+  }
 
   // Initialize core services
   services.transcoder = new Transcoder();
@@ -1705,6 +1719,37 @@ function setupServiceHandlers() {
 
   ipcMain.handle('settings:set', async (event, { key, value }) => {
     await services.settingsManager.set(key, value);
+    // React to some settings immediately
+    if (key === 'isTestnet') {
+      const networkSettings = services.settingsManager.getNetworkSettings();
+      services.spkClient.config = {
+        spkNode: networkSettings.spkNode,
+        isTestnet: networkSettings.isTestnet
+      };
+    }
+    if (key === 'maxStorageGB') {
+      try {
+        const bytes = Math.floor((Number(value) || 0) * 1024 * 1024 * 1024);
+        services.ipfsManager.updateStorageLimit(bytes);
+      } catch (_) {}
+    }
+    if (key.startsWith('webdav')) {
+      try {
+        const s = services.settingsManager.getSettings();
+        if (s.webdavEnabled) {
+          await services.webdav.start({
+            port: s.webdavPort || 4819,
+            requireAuth: !!s.webdavRequireAuth,
+            username: s.webdavUsername || '',
+            password: s.webdavPassword || ''
+          });
+        } else {
+          await services.webdav.stop();
+        }
+      } catch (e) {
+        console.error('Failed to apply WebDAV setting change:', e);
+      }
+    }
     return { success: true };
   });
 

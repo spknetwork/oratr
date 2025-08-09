@@ -18,7 +18,7 @@
                         <span class="brand-name">Oratr</span>
                     </div>
                     <nav class="nav-list">
-                        <button class="tab active" onclick="showTab('drive')">
+                        <button class="tab" onclick="showTab('drive')">
                             <span class="icon">📁</span>
                             <span class="label">My Files</span>
                         </button>
@@ -34,6 +34,10 @@
                             <span class="icon">🗄️</span>
                             <span class="label">Storage Node</span>
                             <span class="status-indicator"></span>
+                        </button>
+                        <button class="tab" onclick="showTab('docs')">
+                            <span class="icon">📖</span>
+                            <span class="label">Docs</span>
                         </button>
                     </nav>
                     <div class="sidebar-footer">
@@ -164,23 +168,7 @@
 
             <!-- Storage Node Tab -->
             <div id="storage-tab" class="tab-content">
-                <h2>Storage Node Setup</h2>
-                
-                <!-- Network Status Monitor (shown when running) -->
-                <div id="storage-network-monitor" class="network-monitor" style="display: none;">
-                    <div class="network-status-bar">
-                        <div class="status-indicator">
-                            <span class="status-light active"></span>
-                            <span>Storage Node Active</span>
-                        </div>
-                        <div class="network-stats">
-                            <span>Contracts: <span id="active-contracts">0</span></span>
-                            <span>Earned: <span id="total-earned">0</span> BROCA</span>
-                            <span>Storage: <span id="storage-usage">0MB / 0GB</span></span>
-                        </div>
-                        <button onclick="toggleStorageMonitor()" class="btn btn-sm">Hide Monitor</button>
-                    </div>
-                </div>
+                <h2>Storage Node</h2>
                 
                 <!-- Setup Steps -->
                 <div class="setup-wizard">
@@ -443,7 +431,7 @@
                 </div>
                 
                 <!-- Network Browser Section -->
-                <div class="network-browser-section" style="margin-top: 30px;">
+                <div class="network-browser-section" style="margin-top: 30px; display: none;">
                     <div id="network-browser-container">
                         <!-- Network browser component will be inserted here -->
                     </div>
@@ -977,8 +965,16 @@
             </div>
 
             <!-- Drive Tab -->
-            <div id="drive-tab" class="tab-content active">
+            <div id="drive-tab" class="tab-content">
+                <!-- Welcome hero (dynamic) -->
+                <div id="drive-hero"></div>
+                
+                <!-- Vue drive component mounts below hero -->
                 <!-- Vue component will be mounted here -->
+            </div>
+            
+            <!-- Docs Tab -->
+            <div id="docs-tab" class="tab-content">
             </div>
                 </div> <!-- /.content-area -->
             </div> <!-- /.app-layout -->
@@ -1004,6 +1000,8 @@
     <script src="components/network-browser.js"></script>
     <script src="components/file-upload-modal.js"></script>
     <script src="components/pending-uploads-monitor.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script type="module" src="components/docs-viewer.js"></script>
     <script src="components/simple-drag-drop.js"></script>
     <script src="video-processing-native.js"></script>
     <script src="renderer.js"></script>

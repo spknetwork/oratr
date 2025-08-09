@@ -26,7 +26,7 @@ When you choose the Internal Node option, Oratr runs a bundled IPFS (Kubo) for y
   - Garbage collection enabled
   - CORS headers set for the app
 - Storage limit
-  - Use the slider in the wizard to choose how much disk space to allow.
+  - You can set the maximum disk space Oratr should use for IPFS in Settings → Storage → "Max Storage for Node (GB)".
 - Life cycle & reliability
   - Oratr is designed to run in the background with a system tray icon. You can close the main window; Oratr keeps services running unless you fully quit from the tray.
   - For most users, simply leaving Oratr running is enough to keep your node available.

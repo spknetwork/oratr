@@ -8,7 +8,7 @@ class SettingsModal {
     this.modal = null;
     this.currentSettings = {};
     // Primary sections in sidebar
-    this.tabs = ['network', 'ipfs', 'storage', 'upload'];
+    this.tabs = ['network', 'ipfs', 'storage', 'webdav', 'upload'];
     this.activeTab = 'network';
   }
 
@@ -46,16 +46,9 @@ class SettingsModal {
               </div>
             </aside>
 
-            <div class="settings-content-area">
+              <div class="settings-content-area">
               <div id="settings-network" class="settings-panel active">
                 <h3>🌐 Network Settings</h3>
-                
-                <div class="setting-group">
-                  <label class="setting-label">
-                    <input type="checkbox" id="testnet-mode"> Use SPK Testnet
-                    <small>Enable to use the test network (recommended for development)</small>
-                  </label>
-                </div>
                 
                 <div class="setting-group">
                   <label>SPK Node URL:</label>
@@ -67,6 +60,13 @@ class SettingsModal {
                   <label>Honeygraph URL:</label>
                   <input type="url" id="honeygraph-url" placeholder="https://honeygraph.dlux.io">
                   <small>The Honeygraph database endpoint</small>
+                </div>
+
+                <div class="setting-group">
+                  <label class="setting-label">
+                    <input type="checkbox" id="testnet-mode"> Use SPK Testnet
+                    <small>Enable to use the test network (recommended for development)</small>
+                  </label>
                 </div>
               </div>
               
@@ -98,10 +98,15 @@ class SettingsModal {
                 </div>
                 
                 <div class="setting-group">
-                  <label>Max Storage: <span id="storage-display">100 GB</span></label>
-                  <input type="range" id="max-storage" min="1" max="1000" value="100" 
-                         oninput="settingsModal.updateStorageDisplay(this.value)">
-                  <small>Maximum storage space to use for IPFS</small>
+                  <label>Current Connection:</label>
+                  <div class="info-grid">
+                    <div><strong>Status:</strong> <span id="ipfs-status">Unknown</span></div>
+                    <div><strong>Peer ID:</strong> <span id="ipfs-peerid">-</span></div>
+                    <div><strong>API:</strong> <span id="ipfs-endpoint">-</span></div>
+                    <div><strong>Repo Path:</strong> <span id="ipfs-repo-path">-</span></div>
+                    <div><strong>Repo Size:</strong> <span id="ipfs-repo-size">-</span></div>
+                    <div><strong>Storage Limit:</strong> <span id="ipfs-storage-limit">-</span></div>
+                  </div>
                 </div>
               </div>
               
@@ -150,21 +155,51 @@ class SettingsModal {
                 </div>
                 
                 <div class="setting-group">
-                  <label>Domain (Optional):</label>
-                  <input type="text" id="storage-domain" placeholder="Leave empty for P2P only">
-                  <small>Only needed if you have a static IP and want to provide gateway services</small>
-                </div>
-                
-                <div class="setting-group">
-                  <label>Bid Rate:</label>
-                  <input type="number" id="storage-bid-rate" placeholder="500" min="0">
-                  <small>Your bid rate for storage contracts (lower = more competitive)</small>
-                </div>
-                
-                <div class="setting-group">
                   <label class="setting-label">
                     <input type="checkbox" id="auto-start-storage"> Auto-start storage node on app launch
                   </label>
+                </div>
+
+                <div class="setting-group">
+                  <label>Registered Account:</label>
+                  <input type="text" id="storage-registered-account" readonly>
+                </div>
+
+                <div class="setting-group">
+                  <label>Max Storage for Node (GB):</label>
+                  <input type="number" id="node-max-storage" min="1" max="10000" step="1">
+                  <small>Upper limit for local storage used by IPFS repo (app-enforced)</small>
+                </div>
+              </div>
+
+              <div id="settings-webdav" class="settings-panel">
+                <h3>🗂️ WebDAV</h3>
+                <div class="setting-group">
+                  <label class="setting-label">
+                    <input type="checkbox" id="webdav-enabled"> Enable WebDAV server
+                  </label>
+                </div>
+                <div class="setting-group">
+                  <label>Port:</label>
+                  <input type="number" id="webdav-port" min="1" max="65535" placeholder="4819">
+                </div>
+                <div class="setting-group">
+                  <label class="setting-label">
+                    <input type="checkbox" id="webdav-require-auth"> Require authentication
+                  </label>
+                </div>
+                <div class="setting-group" id="webdav-auth-credentials" style="display:none;">
+                  <label>Username:</label>
+                  <input type="text" id="webdav-username" placeholder="">
+                  <label>Password:</label>
+                  <input type="password" id="webdav-password" placeholder="">
+                </div>
+                <div class="setting-group">
+                  <label>Status:</label>
+                  <div class="info-grid">
+                    <div><strong>Running:</strong> <span id="webdav-running">No</span></div>
+                    <div><strong>Listening on:</strong> <span id="webdav-listen">-</span></div>
+                  </div>
                 </div>
               </div>
               
@@ -361,6 +396,12 @@ class SettingsModal {
       .radio-group input[type="radio"] {
         margin-right: 0.5rem;
       }
+
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.5rem 1rem;
+      }
       
       .path-input {
         display: flex;
@@ -476,6 +517,7 @@ class SettingsModal {
       ipfs: '📁',
       upload: '📤',
       storage: '💾',
+      webdav: '🗂️',
       ui: '🎨',
       advanced: '🔧'
     };
@@ -488,6 +530,7 @@ class SettingsModal {
       ipfs: 'IPFS',
       upload: 'Upload',
       storage: 'Storage',
+      webdav: 'WebDAV',
       ui: 'Interface',
       advanced: 'Advanced'
     };
@@ -501,6 +544,31 @@ class SettingsModal {
         const externalSettings = document.getElementById('external-ipfs-settings');
         externalSettings.style.display = radio.value === 'external' ? 'block' : 'none';
       });
+    });
+
+    // WebDAV auth toggle
+    this.modal.addEventListener('change', (e) => {
+      if (e.target && e.target.id === 'webdav-require-auth') {
+        const creds = document.getElementById('webdav-auth-credentials');
+        creds.style.display = e.target.checked ? 'block' : 'none';
+      }
+      if (e.target && e.target.id === 'testnet-mode') {
+        // Auto-switch endpoints on toggle
+        const checked = e.target.checked;
+        const spkNode = document.getElementById('spk-node');
+        const honey = document.getElementById('honeygraph-url');
+        if (checked) {
+          spkNode.value = 'https://spktest.dlux.io';
+          honey.value = 'https://honeygraph.dlux.io';
+        } else {
+          // Placeholder mainnet defaults; adjust when production endpoints exist
+          spkNode.value = 'https://spk.dlux.io';
+          honey.value = 'https://honeygraph.dlux.io';
+        }
+        // Persist both values immediately
+        this.saveSetting(spkNode);
+        this.saveSetting(honey);
+      }
     });
 
     // Auto-save on input changes
@@ -562,8 +630,9 @@ class SettingsModal {
     document.getElementById('ipfs-host').value = settings.ipfsHost;
     document.getElementById('ipfs-port').value = settings.ipfsPort;
     document.getElementById('ipfs-data-path').value = settings.ipfsDataPath;
-    document.getElementById('max-storage').value = settings.maxStorageGB;
-    this.updateStorageDisplay(settings.maxStorageGB);
+
+    // IPFS live info
+    this.refreshIPFSInfo();
 
     // Upload settings
     document.querySelector(`input[name="upload-method"][value="${settings.defaultUploadMethod}"]`).checked = true;
@@ -573,9 +642,24 @@ class SettingsModal {
 
     // Storage settings
     document.getElementById('enable-storage-node').checked = settings.enableStorageNode;
-    document.getElementById('storage-domain').value = settings.storageNodeDomain;
-    document.getElementById('storage-bid-rate').value = settings.storageBidRate;
     document.getElementById('auto-start-storage').checked = settings.autoStartStorage;
+
+    // Storage extras
+    this.populateStorageExtras();
+
+    // WebDAV settings
+    const webdavEnabledEl = document.getElementById('webdav-enabled');
+    const webdavPortEl = document.getElementById('webdav-port');
+    const webdavRequireAuthEl = document.getElementById('webdav-require-auth');
+    const webdavUserEl = document.getElementById('webdav-username');
+    const webdavPassEl = document.getElementById('webdav-password');
+    webdavEnabledEl.checked = !!settings.webdavEnabled;
+    webdavPortEl.value = settings.webdavPort || 4819;
+    webdavRequireAuthEl.checked = !!settings.webdavRequireAuth;
+    webdavUserEl.value = settings.webdavUsername || '';
+    webdavPassEl.value = settings.webdavPassword || '';
+    document.getElementById('webdav-auth-credentials').style.display = webdavRequireAuthEl.checked ? 'block' : 'none';
+    this.refreshWebDavStatus();
 
     // UI settings
     document.getElementById('theme').value = settings.theme;
@@ -606,8 +690,6 @@ class SettingsModal {
       'video-quality': 'videoQuality',
       'transcode-parallel': 'transcodeParallel',
       'enable-storage-node': 'enableStorageNode',
-      'storage-domain': 'storageNodeDomain',
-      'storage-bid-rate': 'storageBidRate',
       'auto-start-storage': 'autoStartStorage',
       'theme': 'theme',
       'refresh-interval': 'autoRefreshInterval',
@@ -615,7 +697,15 @@ class SettingsModal {
       'confirm-dangerous': 'confirmDangerousActions',
       'debug-mode': 'debugMode',
       'log-level': 'logLevel',
-      'share-usage-stats': 'shareUsageStats'
+      'share-usage-stats': 'shareUsageStats',
+      // WebDAV
+      'webdav-enabled': 'webdavEnabled',
+      'webdav-port': 'webdavPort',
+      'webdav-require-auth': 'webdavRequireAuth',
+      'webdav-username': 'webdavUsername',
+      'webdav-password': 'webdavPassword',
+      // Storage extras
+      'node-max-storage': 'maxStorageGB'
     };
 
     let key, value;
@@ -642,9 +732,67 @@ class SettingsModal {
     try {
       await window.api.invoke('settings:set', { key, value });
       this.currentSettings[key] = value;
+      if (key.startsWith('webdav')) {
+        // Apply immediately via service
+        await window.api.invoke('webdav:configure', {
+          port: Number(document.getElementById('webdav-port').value) || 4819,
+          requireAuth: document.getElementById('webdav-require-auth').checked,
+          username: document.getElementById('webdav-username').value,
+          password: document.getElementById('webdav-password').value
+        });
+        // Start/stop based on enabled
+        if (document.getElementById('webdav-enabled').checked) {
+          await window.api.invoke('webdav:start');
+        } else {
+          await window.api.invoke('webdav:stop');
+        }
+        this.refreshWebDavStatus();
+      }
     } catch (error) {
       console.error('Failed to save setting:', error);
     }
+  }
+
+  async refreshIPFSInfo() {
+    try {
+      const [config, status, stats] = await Promise.all([
+        window.api.ipfs.getConfig(),
+        window.api.ipfs.getNodeInfo().catch(() => null),
+        window.api.ipfs.getRepoStats().catch(() => null)
+      ]);
+      document.getElementById('ipfs-status').textContent = status && status.id ? 'Connected' : 'Not Connected';
+      document.getElementById('ipfs-peerid').textContent = status && status.id ? String(status.id) : '-';
+      document.getElementById('ipfs-endpoint').textContent = `${config.host}:${config.port}`;
+      document.getElementById('ipfs-repo-path').textContent = stats?.repoPath || (config?.dataPath || '-');
+      const repoSize = stats?.repoSize || 0;
+      document.getElementById('ipfs-repo-size').textContent = this.formatGB(repoSize);
+      const limitBytes = (this.currentSettings.maxStorageGB || 0) * 1024 * 1024 * 1024;
+      document.getElementById('ipfs-storage-limit').textContent = limitBytes ? this.formatGB(limitBytes) : '-';
+    } catch (_) {}
+  }
+
+  formatGB(bytes) {
+    const gb = bytes / (1024 * 1024 * 1024);
+    return `${gb.toFixed(2)} GB`;
+  }
+
+  async populateStorageExtras() {
+    try {
+      const poaCfg = await window.api.poa.getConfig();
+      const acct = poaCfg?.account || '';
+      const input = document.getElementById('storage-registered-account');
+      if (input) input.value = acct || 'Not registered';
+      const maxEl = document.getElementById('node-max-storage');
+      if (maxEl) maxEl.value = this.currentSettings.maxStorageGB || 100;
+    } catch (_) {}
+  }
+
+  async refreshWebDavStatus() {
+    try {
+      const status = await window.api.invoke('webdav:status');
+      document.getElementById('webdav-running').textContent = status.running ? 'Yes' : 'No';
+      document.getElementById('webdav-listen').textContent = status.running ? `http://127.0.0.1:${status.port}` : '-';
+    } catch (_) {}
   }
 
   updateStorageDisplay(value) {

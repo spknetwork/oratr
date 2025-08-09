@@ -1318,6 +1318,54 @@ button:disabled:hover {
     display: flex;
     justify-content: center;
 }
+/* Welcome hero */
+.welcome-hero {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 24px;
+    align-items: center;
+    background: linear-gradient(145deg, rgba(76,175,80,0.08), rgba(0,0,0,0.25));
+    border: 1px solid rgba(76,175,80,0.2);
+    border-radius: 16px;
+    padding: 24px;
+    margin: 16px 0 24px 0;
+}
+
+.welcome-hero h2 {
+    margin: 0 0 8px;
+    color: #e6e8eb;
+}
+
+.welcome-hero p {
+    color: #9aa3ad;
+}
+
+.welcome-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.welcome-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.welcome-card h4 {
+    margin: 0 0 6px;
+}
+
+.welcome-card p {
+    margin: 0 0 10px;
+    color: #9aa3ad;
+    font-size: 0.9rem;
+}
+
+.welcome-card .btn {
+    width: 100%;
+}
 
 #balance-tab .tab-content {
     width: 100%;

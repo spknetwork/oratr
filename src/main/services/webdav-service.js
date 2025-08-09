@@ -9,28 +9,60 @@ class WebDavService {
     this.server = null;
     this.httpServer = null;
     this.port = 4819; // default local port
+    this.requireAuth = false;
+    this.username = '';
+    this.password = '';
   }
 
-  async start(port) {
+  async start(configOrPort) {
     if (this.httpServer) return { running: true, port: this.port };
-    if (port) this.port = port;
+    // Accept legacy numeric port or full config
+    if (typeof configOrPort === 'number') {
+      this.port = configOrPort;
+    } else if (configOrPort && typeof configOrPort === 'object') {
+      this.port = Number(configOrPort.port) || this.port;
+      this.requireAuth = Boolean(configOrPort.requireAuth);
+      this.username = String(configOrPort.username || '').trim();
+      this.password = String(configOrPort.password || '').trim();
+    }
 
     // Minimal WebDAV file system that proxies Honeygraph FS
     const server = new webdav.WebDAVServer({
       requireAuthentification: false
     });
 
-    // Directory and file handlers (read-only) + permissive Basic auth
+    // Directory and file handlers (read-only) + optional Basic auth
     server.beforeRequest(async (ctx, next) => {
       const method = ctx.request.method || '';
-      // If no Authorization provided, challenge with Basic to satisfy DAV clients
+      // Optional Basic auth
       const authHeader = (ctx.request && ctx.request.headers && (ctx.request.headers.authorization || ctx.request.headers.Authorization)) || null;
-      if (!authHeader && (method === 'PROPFIND' || method === 'HEAD' || method === 'GET')) {
-        ctx.setCode(webdav.HTTPCodes.Unauthorized);
-        ctx.response.setHeader('WWW-Authenticate', 'Basic realm="Oratr", charset="UTF-8"');
-        ctx.response.setHeader('DAV', '1,2');
-        ctx.response.setHeader('MS-Author-Via', 'DAV');
-        return ctx.end();
+      if (this.requireAuth) {
+        if (!authHeader) {
+          ctx.setCode(webdav.HTTPCodes.Unauthorized);
+          ctx.response.setHeader('WWW-Authenticate', 'Basic realm="Oratr", charset="UTF-8"');
+          ctx.response.setHeader('DAV', '1,2');
+          ctx.response.setHeader('MS-Author-Via', 'DAV');
+          return ctx.end();
+        }
+        try {
+          const match = String(authHeader).match(/^Basic\s+([A-Za-z0-9+/=]+)/i);
+          if (!match) throw new Error('Bad auth');
+          const decoded = Buffer.from(match[1], 'base64').toString('utf8');
+          const [user, pass] = decoded.split(':');
+          if (this.username && (user !== this.username || pass !== this.password)) {
+            ctx.setCode(webdav.HTTPCodes.Unauthorized);
+            return ctx.end();
+          }
+        } catch (_) {
+          ctx.setCode(webdav.HTTPCodes.Unauthorized);
+          return ctx.end();
+        }
+      } else {
+        // If auth not required, some DAV clients still probe: provide challenge only for PROPFIND/HEAD/GET without creds
+        if (!authHeader && (method === 'PROPFIND' || method === 'HEAD' || method === 'GET')) {
+          ctx.response.setHeader('DAV', '1,2');
+          ctx.response.setHeader('MS-Author-Via', 'DAV');
+        }
       }
       // Handle PROPFIND for directory listings
       if (method === 'PROPFIND' || method === 'HEAD') {
@@ -214,7 +246,7 @@ class WebDavService {
     });
 
     this.registerIPC();
-    return { running: true, port: this.port };
+    return { running: true, port: this.port, requireAuth: this.requireAuth };
   }
 
   async stop() {
@@ -229,9 +261,20 @@ class WebDavService {
   registerIPC() {
     if (this._ipcRegistered) return;
     this._ipcRegistered = true;
-    ipcMain.handle('webdav:start', async (_e, port) => this.start(port));
+    ipcMain.handle('webdav:start', async (_e, configOrPort) => this.start(configOrPort));
     ipcMain.handle('webdav:stop', async () => this.stop());
-    ipcMain.handle('webdav:status', async () => ({ running: !!this.httpServer, port: this.port }));
+    ipcMain.handle('webdav:status', async () => ({ running: !!this.httpServer, port: this.port, requireAuth: this.requireAuth }));
+    ipcMain.handle('webdav:configure', async (_e, cfg) => {
+      // Update config (will take effect on next start). If running, restart.
+      const wasRunning = !!this.httpServer;
+      if (wasRunning) await this.stop();
+      this.port = Number(cfg?.port ?? this.port) || this.port;
+      this.requireAuth = Boolean(cfg?.requireAuth ?? this.requireAuth);
+      this.username = String(cfg?.username ?? this.username);
+      this.password = String(cfg?.password ?? this.password);
+      if (wasRunning) await this.start();
+      return { success: true, running: !!this.httpServer, port: this.port, requireAuth: this.requireAuth };
+    });
   }
 }
 

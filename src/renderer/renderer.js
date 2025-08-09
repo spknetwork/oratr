@@ -881,6 +881,15 @@ async function showTab(tabName) {
         }
     } else if (tabName === 'drive' && currentAccount) {
         refreshFiles();
+    } else if (tabName === 'docs') {
+        try {
+            if (window.docsViewer) {
+                window.docsViewer.container = document.getElementById('docs-tab');
+                window.docsViewer.mount();
+            }
+        } catch (e) {
+            console.error('Failed to mount docs viewer:', e);
+        }
     }
 }
 
@@ -2100,6 +2109,15 @@ async function updateStorageDashboard() {
     
     // Update the state-based fields (status, version, etc)
     await updateDashboardFromState();
+    // Toggle network browser visibility based on running state
+    try {
+        const nbSection = document.querySelector('.network-browser-section');
+        if (nbSection) {
+            nbSection.style.display = storageDashboardState.running ? 'block' : 'none';
+        }
+    } catch (e) {
+        console.warn('Failed to toggle network browser visibility:', e);
+    }
     
     // Update the storage statistics from stored-by API
     await updatePinnedFilesInfo();
@@ -2545,8 +2563,7 @@ async function initializeStorageTab() {
             const wizard = document.querySelector('.setup-wizard');
             if (wizard) wizard.style.display = 'none';
             
-            const networkMonitor = document.getElementById('storage-network-monitor');
-            if (networkMonitor) networkMonitor.style.display = 'none';
+            // Remove old network monitor usage; dashboard handles status
             
             const dashboard = document.getElementById('storage-dashboard');
             if (dashboard) dashboard.style.display = 'none';
@@ -2583,8 +2600,7 @@ async function initializeStorageTab() {
             const wizard = document.querySelector('.setup-wizard');
             if (wizard) wizard.style.display = 'none';
             
-            const networkMonitor = document.getElementById('storage-network-monitor');
-            if (networkMonitor) networkMonitor.style.display = 'block';
+            // No separate network monitor; dashboard is primary
             
             const dashboard = document.getElementById('storage-dashboard');
             if (dashboard) dashboard.style.display = 'block';
@@ -5644,13 +5660,48 @@ function showApp() {
     // Ensure default tab is active if no tab is currently active
     const activeTabs = document.querySelectorAll('.tab.active');
     if (activeTabs.length === 0) {
-        // Show the default tab (drive)
-        showTab('drive');
+        // Prefer Storage only if it's already running; otherwise default to Drive (file explorer)
+        const defaultTab = (typeof storageDashboardState !== 'undefined' && storageDashboardState.running) ? 'storage' : 'drive';
+        showTab(defaultTab);
     }
     
     // Mount drive component if on drive tab
     const driveTab = document.getElementById('drive-tab');
     if (driveTab && driveTab.classList.contains('active')) {
+        // Render a contextual welcome hero at the top of the drive view
+        try {
+            const hero = document.getElementById('drive-hero');
+            if (hero) {
+                const hasAccount = Boolean(currentAccount);
+                const storageRunningNow = Boolean(storageDashboardState && storageDashboardState.running);
+                hero.innerHTML = `
+                    <div class="welcome-hero">
+                        <div>
+                            <h2>Welcome to Oratr</h2>
+                            <p>${hasAccount ? 'You are signed in. Use these quick actions to get started.' : 'No account detected. You can browse public files, but some features require an SPK/Hive account.'}</p>
+                        </div>
+                        <div class="welcome-actions">
+                            <div class="welcome-card">
+                                <h4>Upload a Video</h4>
+                                <p>Transcode to HLS and publish to SPK.</p>
+                                <button class="btn btn-primary" onclick="showTab('upload')">Go to Upload</button>
+                            </div>
+                            <div class="welcome-card">
+                                <h4>${hasAccount ? 'Manage Accounts' : 'Create/Import Account'}</h4>
+                                <p>${hasAccount ? 'Switch or manage your accounts.' : 'Set up a Hive/ SPK account to use wallet features.'}</p>
+                                <button class="btn btn-secondary" onclick="showAccountManager()">Open Account Manager</button>
+                            </div>
+                            <div class="welcome-card">
+                                <h4>Storage Node</h4>
+                                <p>${storageRunningNow ? 'Your node is running.' : 'Set up a storage node to earn from storing files.'}</p>
+                                <button class="btn ${storageRunningNow ? 'btn-secondary' : 'btn-primary'}" onclick="showTab('storage')">${storageRunningNow ? 'View Dashboard' : 'Set Up Storage'}</button>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+        } catch (e) {
+            console.warn('Failed to render drive hero:', e);
+        }
         console.log('[showApp] Refreshing drive tab for:', window.currentAccount);
         if (window.mountDriveComponent) {
             window.mountDriveComponent();
@@ -5729,7 +5780,10 @@ function showTab(tabName) {
             
             // Always initialize the storage tab to get current state
             console.log('[STORAGE TAB] Calling initializeStorageTab');
-            initializeStorageTab();
+            // Defer initialization slightly to allow UI to render and auto-start to stabilize
+            setTimeout(() => {
+                initializeStorageTab();
+            }, 50);
             
             // If we don't have an account and node isn't running, show wizard
             if (!currentAccount && !storageDashboardState.running) {
@@ -5740,6 +5794,11 @@ function showTab(tabName) {
                     wizard.style.display = 'block';
                     console.log('Storage tab opened without account - showing wizard');
                 }
+            }
+            // Toggle Network Browser visibility based on running state
+            const nbSection = document.querySelector('.network-browser-section');
+            if (nbSection) {
+                nbSection.style.display = storageDashboardState.running ? 'block' : 'none';
             }
             break;
     }

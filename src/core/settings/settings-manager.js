@@ -47,8 +47,6 @@ class SettingsManager extends EventEmitter {
       
       // Storage Node Settings
       enableStorageNode: true,
-      storageNodeDomain: '', // Optional domain for gateway services
-      storageBidRate: 500,
       autoStartStorage: true,
       storageNodeWasRunning: false, // Track if storage node was running before shutdown
       
@@ -59,7 +57,14 @@ class SettingsManager extends EventEmitter {
       // Development Settings
       debugMode: false,
       enableConsoleLogging: true,
-      logLevel: 'info' // 'debug', 'info', 'warn', 'error'
+      logLevel: 'info', // 'debug', 'info', 'warn', 'error'
+
+      // WebDAV Settings
+      webdavEnabled: false,
+      webdavPort: 4819,
+      webdavRequireAuth: false,
+      webdavUsername: '',
+      webdavPassword: ''
     };
   }
 
