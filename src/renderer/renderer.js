@@ -459,64 +459,14 @@ function updateWalletLockStatus(locked) {
 function updateAccountDisplay() {
     const accountName = document.getElementById('account-name');
     const accountBalance = document.getElementById('account-balance');
-    const avatarImg = document.getElementById('account-avatar');
-
+    
     if (currentAccount) {
-        if (accountName) accountName.textContent = `@${currentAccount}`;
-        if (avatarImg) updateAccountAvatar(currentAccount);
+        if (accountName) accountName.textContent = currentAccount;
         // Balance will be updated by refreshBalance()
     } else {
         if (accountName) accountName.textContent = 'No account';
         if (accountBalance) accountBalance.innerHTML = '';
-        if (avatarImg) {
-            avatarImg.src = '../../resources/images/icons/tray/oratr_icon_alpha.png';
-        }
     }
-}
-
-async function updateAccountAvatar(username) {
-    try {
-        const url = await getHiveProfileAvatar(username);
-        const avatarImg = document.getElementById('account-avatar');
-        if (avatarImg && url) avatarImg.src = url;
-    } catch (e) {
-        // Fallback silently
-    }
-}
-
-async function getHiveProfileAvatar(username) {
-    // Query Hive for account profile image
-    const response = await fetch('https://api.hive.blog', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'condenser_api.get_accounts',
-            params: [[username]],
-            id: 1
-        })
-    });
-    const data = await response.json();
-    if (!data || !data.result || !data.result[0]) return null;
-    const acct = data.result[0];
-    let profile = null;
-    try {
-        if (acct.posting_json_metadata) {
-            const pj = JSON.parse(acct.posting_json_metadata);
-            profile = pj.profile || pj;
-        }
-    } catch (_) {}
-    if (!profile) {
-        try {
-            if (acct.json_metadata) {
-                const jm = JSON.parse(acct.json_metadata);
-                profile = jm.profile || jm;
-            }
-        } catch (_) {}
-    }
-    const img = profile && (profile.profile_image || profile.image);
-    if (img && typeof img === 'string' && img.length > 3) return img;
-    return null;
 }
 
 // Show account manager
@@ -2320,19 +2270,31 @@ async function updatePinnedFilesInfo() {
         let contracts = [];
         let apiData = null;
         try {
-            console.log(`Fetching contracts for username: ${username}`);
-            const contractsResponse = await fetch(`https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`);
-            if (contractsResponse.ok) {
-                apiData = await contractsResponse.json();
-                console.log('Stored-by API response:', apiData);
-                contracts = apiData.contractsStoring || apiData.contracts || [];
-                console.log(`Fetched ${contracts.length} stored contracts for ${username}`);
-                if (contracts.length > 0) {
-                    console.log('First contract example:', contracts[0]);
+            console.log(`Fetching contracts for username (paginated): ${username}`);
+            const baseUrl = `https://honeygraph.dlux.io/api/spk/contracts/stored-by/${username}`;
+            const limit = 200;
+            let offset = 0;
+            let total = null;
+            const all = [];
+            while (true) {
+                const url = `${baseUrl}?limit=${limit}&offset=${offset}`;
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    console.error(`API error: ${resp.status} ${resp.statusText}`);
+                    break;
                 }
-            } else {
-                console.error(`API error: ${contractsResponse.status} ${contractsResponse.statusText}`);
+                const page = await resp.json();
+                if (total == null) total = page.count || (page.totalContracts && page.totalContracts[0]?.count) || 0;
+                const items = page.contractsStoring || page.contracts || [];
+                all.push(...items);
+                console.log(`Fetched page: ${items.length} (offset ${offset})`);
+                if (items.length < limit) break; // last page
+                offset += limit;
+                if (all.length >= total && total > 0) break; // collected enough
             }
+            contracts = all;
+            apiData = { count: total || all.length, contractsStoring: all };
+            console.log(`Fetched ${contracts.length} stored contracts for ${username} (total=${apiData.count})`);
         } catch (error) {
             console.error('Failed to fetch contracts:', error);
             // Don't clear the dashboard on error - just use empty contracts array
@@ -2358,9 +2320,12 @@ async function updatePinnedFilesInfo() {
         // Calculate comprehensive statistics from stored-by API
         let activeContracts = 0;
         let totalFiles = 0;
-        let totalSize = 0; // sum of reported contract sizes (fallback)
+        // For display of "Storage Used" we now strictly sum contract.totalSize bytes from the API
+        // per product decision: do not use repo size or per-node utilization here.
+        let summedContractTotalBytes = 0; // display: sum of contract.totalSize (bytes)
+        // Keep these for potential future diagnostics, but do not use for display
+        let totalSize = 0; // historical aggregate of various size fields
         let totalUtilized = 0; // sum of contract.utilized if present
-        let contractsTotalBytes = 0; // display: sum of contracts stored on this node
         let missingPins = [];
         let pinnedCount = 0;
         const pinnedSet = new Set(pinnedCIDs);
@@ -2371,15 +2336,17 @@ async function updatePinnedFilesInfo() {
             // Count active contracts
             activeContracts++;
             
-            // Track sizes by precedence: utilized is the most accurate per-node value
+            // Track sizes
             if (typeof contract.utilized === 'number') {
                 totalUtilized += contract.utilized;
             }
-            const contractSize = contract.totalSize || contract.size || contract.utilized || 0;
-            totalSize += contractSize;
+            const contractSize = (typeof contract.totalSize === 'number')
+                ? contract.totalSize
+                : (typeof contract.size === 'number' ? contract.size : 0);
+            totalSize += contractSize; // legacy aggregate (unused for display)
 
-            // For presentation, prefer per-node utilization when provided, else totalSize
-            contractsTotalBytes += (typeof contract.utilized === 'number') ? contract.utilized : contractSize;
+            // New display rule: only sum API-reported totalSize bytes
+            summedContractTotalBytes += contractSize;
             
             // Count files in contract
             const fileCount = contract.fileCount || (contract.files ? contract.files.length : 1);
@@ -2450,15 +2417,47 @@ async function updatePinnedFilesInfo() {
         }
         
         const spaceUsedEl = document.getElementById('storage-used');
-        // Storage used reflects the total of contracts stored on this node (from Honeygraph):
-        // prefer per-node utilization if available, else total contract sizes.
-        const usedBytes = contractsTotalBytes > 0 ? contractsTotalBytes : (totalUtilized > 0 ? totalUtilized : totalSize);
+        // Prefer the node's own stored-contract list for Space Used to avoid API pagination issues
+        let usedBytesLocal = 0;
+        let localContractsCount = null;
+        try {
+            const nodeStats = await window.api.storage.getNodeStats();
+            if (nodeStats && typeof nodeStats.totalSize === 'number') {
+                usedBytesLocal = nodeStats.totalSize;
+                localContractsCount = nodeStats.contractsStored;
+            }
+        } catch (e) {
+            // ignore errors and fall back to API-derived sum
+        }
+        const usedToDisplay = usedBytesLocal > 0 ? usedBytesLocal : summedContractTotalBytes;
         if (spaceUsedEl) {
-            spaceUsedEl.textContent = formatBytes(usedBytes);
-            console.log('Updated space used element to:', formatBytes(usedBytes), { totalUtilized, totalSize });
+            spaceUsedEl.textContent = formatBytes(usedToDisplay);
+            console.log('Updated space used element (local-first):', formatBytes(usedToDisplay));
         } else {
             console.error('Could not find storage-used element');
         }
+        if (localContractsCount != null) {
+            const contractsEl2 = document.getElementById('storage-contracts');
+            if (contractsEl2) contractsEl2.textContent = localContractsCount;
+        }
+
+        // If Honeygraph shows fewer files than we have pinned for a contract, unpin removed files
+        try {
+            if (contracts && Array.isArray(contracts) && pinnedCIDs.length) {
+                const requiredCidSet = new Set();
+                contracts.forEach(c => {
+                    (c.files || []).forEach(f => requiredCidSet.add(f.cid));
+                });
+                const toUnpin = pinnedCIDs.filter(cid => !requiredCidSet.has(cid));
+                if (toUnpin.length) {
+                    for (const cid of toUnpin) {
+                        try {
+                            await fetch('http://127.0.0.1:5001/api/v0/pin/rm?arg=' + encodeURIComponent(cid), { method: 'POST' });
+                        } catch (_) {}
+                    }
+                }
+            }
+        } catch (_) {}
         
         // For Space Available, we need to get IPFS repo stats
         try {
@@ -3148,22 +3147,6 @@ async function registerStorageNode() {
         return;
     }
     
-    // Ensure sufficient LARYNX balance (>= 2000)
-    try {
-        const active = await window.api.account.getActive();
-        if (active && active.username) {
-            const stats = await window.api.spk.getNetworkStats().catch(()=>null);
-            const acctReg = await window.api.spk.checkRegistration(active.username).catch(()=>null);
-            // Try to get balances using existing path
-            const balancesResp = await window.api.balance.get(true).catch(()=>null);
-            const larynxBalance = balancesResp && balancesResp.success && balancesResp.balances ? (balancesResp.balances.LARYNX || balancesResp.balances.larynx || 0) : 0;
-            if (Number(larynxBalance) < 2000) {
-                showNotification('You need at least 2000 LARYNX to register a storage node.', 'warning');
-                return;
-            }
-        }
-    } catch (_) {}
-
     // Get IPFS node ID
     const ipfsInfo = await window.api.ipfs.getNodeInfo();
     if (!ipfsInfo || !ipfsInfo.id) {

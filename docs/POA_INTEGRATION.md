@@ -181,6 +181,32 @@ Storage nodes earn rewards based on:
 
 Check earnings in your SPK wallet.
 
+## Storage Dashboard Notes
+
+### Storage Used
+
+- Source of truth: Honeygraph `stored-by` API at `https://honeygraph.dlux.io/api/spk/contracts/stored-by/:account`.
+- Computation: UI displays the sum of `totalSize` (bytes) across all returned contracts, pretty-printed using powers of 1024 (KB/MB/GB).
+- Rationale: `totalSize` reflects on-chain contract sizes and avoids confusion with IPFS repo metrics or per-node utilization.
+
+Note: IPFS repo size and free space are still queried for diagnostics, but they do not drive the “Storage Used” card.
+
+### Multi-node Coordination (Gossip)
+
+When multiple Oratr instances run under the same account, they coordinate via IPFS PubSub to avoid duplicating storage for the same contract.
+
+- Topic: `oratr.cluster.<username>`
+- Transport: IPFS PubSub (gossipsub). Ensure PubSub is enabled; see IPFS options.
+- Presence: Nodes publish `HELLO` on start and periodic `BEACON` messages containing their current contract claims.
+- Contract ownership: A node that takes responsibility for a contract publishes `CLAIM { contractId }`; on release it sends `RELEASE`.
+- Discovery: Nodes may ask `WHO_HAS { contractId }` and any holder responds with `CLAIM`.
+- Staleness: Claims expire if not refreshed for 60s; peers expire after 5m.
+- Backoff: When a contract appears unclaimed, nodes use a randomized 3–7s backoff before attempting to pick it up, then verify it’s still unclaimed.
+
+This protocol is implemented by the app’s coordinator and is designed to map directly to CLI nodes.
+
+Example services registry endpoint used to find sibling nodes for an account: [`https://spktest.dlux.io/user_services/<username>`](https://spktest.dlux.io/user_services/dlux-io).
+
 ## Advanced Configuration
 
 ### Custom Binary Location

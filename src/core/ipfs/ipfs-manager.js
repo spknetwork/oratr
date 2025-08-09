@@ -495,6 +495,50 @@ class IPFSManager extends EventEmitter {
   }
 
   /**
+   * Publish a message to an IPFS PubSub topic
+   */
+  async publish(topic, messageObject) {
+    if (!this.client) {
+      throw new Error('IPFS not started');
+    }
+    const data = Buffer.from(JSON.stringify(messageObject));
+    return this.client.pubsub.publish(topic, data);
+  }
+
+  /**
+   * Subscribe to an IPFS PubSub topic
+   * handler receives: (msgObject, rawMsg)
+   */
+  async subscribe(topic, handler) {
+    if (!this.client) {
+      throw new Error('IPFS not started');
+    }
+    const wrapped = async (msg) => {
+      try {
+        const dataStr = Buffer.from(msg.data).toString('utf8');
+        const obj = JSON.parse(dataStr);
+        await handler(obj, msg);
+      } catch (_) {
+        // ignore malformed
+      }
+    };
+    await this.client.pubsub.subscribe(topic, wrapped);
+    return wrapped; // return internal handler for potential unsubscribe
+  }
+
+  /**
+   * Unsubscribe from a topic
+   */
+  async unsubscribe(topic, handler) {
+    if (!this.client) return;
+    try {
+      await this.client.pubsub.unsubscribe(topic, handler);
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  /**
    * Get connected peers
    */
   async getConnectedPeers() {

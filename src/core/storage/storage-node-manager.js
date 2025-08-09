@@ -1,6 +1,7 @@
 const { EventEmitter } = require('events');
 const SPK = require('@disregardfiat/spk-js').default;
 const IPFSManager = require('../ipfs/ipfs-manager');
+const ContractCoordinator = require('./contract-coordinator');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
@@ -30,6 +31,7 @@ class StorageNodeManager extends EventEmitter {
         this.cachedRegistrationStatus = null;
         this.running = false;
         this.stateFile = path.join(os.homedir(), '.oratr', 'storage-node-state.json');
+        this.contractCoordinator = null;
         
         // Initialize IPFS Manager
         this.ipfsManager = new IPFSManager({
@@ -488,6 +490,12 @@ class StorageNodeManager extends EventEmitter {
             const result = await this.spkInstance.storeFiles(contractIds, false);
             await this.getStoredContracts(); // Refresh list
             this.emit('files-stored', result);
+            // Notify coordinator of new claims
+            if (this.contractCoordinator) {
+                for (const id of contractIds) {
+                    try { await this.contractCoordinator.claimContract(id); } catch (_) {}
+                }
+            }
             return result;
         } catch (error) {
             console.error('Failed to store files:', error);
@@ -507,6 +515,12 @@ class StorageNodeManager extends EventEmitter {
             const result = await this.spkInstance.removeFiles(contractIds);
             await this.getStoredContracts(); // Refresh list
             this.emit('files-removed', result);
+            // Notify coordinator of releases
+            if (this.contractCoordinator) {
+                for (const id of contractIds) {
+                    try { await this.contractCoordinator.releaseContract(id); } catch (_) {}
+                }
+            }
             return result;
         } catch (error) {
             console.error('Failed to remove files:', error);
@@ -801,6 +815,26 @@ class StorageNodeManager extends EventEmitter {
             // 4. Start storage node services
             this.running = true;
             this.emit('storage-node-started');
+
+            // 5. Start contract coordinator (multi-node gossip)
+            try {
+                const active = await this.accountManager.getActive();
+                if (active && this.ipfsManager.running) {
+                    this.contractCoordinator = new ContractCoordinator({
+                        ipfsManager: this.ipfsManager,
+                        username: active.username,
+                        servicesApiBase: this.config.node
+                    });
+                    await this.contractCoordinator.start();
+
+                    // When coordinator suggests we should store a contract, propagate event
+                    this.contractCoordinator.on('should-store', (contract) => {
+                        this.emit('gossip:should-store', contract);
+                    });
+                }
+            } catch (e) {
+                console.warn('Failed to start contract coordinator:', e.message);
+            }
             
             return await this.getComprehensiveStatus();
         } catch (error) {
@@ -814,6 +848,12 @@ class StorageNodeManager extends EventEmitter {
      */
     async stopComplete() {
         this.running = false;
+        try {
+            if (this.contractCoordinator) {
+                await this.contractCoordinator.stop();
+                this.contractCoordinator = null;
+            }
+        } catch (_) {}
         
         // Stop IPFS if we're managing it
         if (!this.config.externalIPFS) {
