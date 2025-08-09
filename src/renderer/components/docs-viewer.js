@@ -16,25 +16,73 @@ class DocsViewer {
   resolveRoots() {
     try {
       if (!fs || !path) { this.roots = []; return; }
-      // Determine renderer directory regardless of CJS/ESM context
-      let rendererDir = null;
+
+      const attempts = [];
+
+      const addAttempt = (p) => {
+        try {
+          if (p && typeof p === 'string' && !attempts.includes(p)) attempts.push(p);
+        } catch (_) {}
+      };
+
+      // 1) From current page path (works in dev and most builds)
       try {
-        // ESM-friendly dirname
-        const fileUrl = (typeof import !== 'undefined' && typeof import.meta !== 'undefined' && import.meta.url) ? import.meta.url : null;
-        if (fileUrl) {
-          const filePath = fileUrl.startsWith('file:') ? new URL(fileUrl).pathname : fileUrl;
-          rendererDir = path.dirname(filePath);
+        const pagePath = decodeURIComponent(window.location.pathname || '');
+        if (pagePath) {
+          let current = path.dirname(pagePath);
+          for (let i = 0; i < 8 && current && current !== path.dirname(current); i++) {
+            addAttempt(path.join(current, 'docs'));
+            addAttempt(path.join(current, 'oratr', 'docs'));
+            // Handle app.asar packaged path by going one level up
+            if (current.includes('app.asar')) {
+              const up = path.resolve(current, '..');
+              addAttempt(path.join(up, 'docs'));
+              addAttempt(path.join(up, 'oratr', 'docs'));
+            }
+            current = path.resolve(current, '..');
+          }
         }
       } catch (_) {}
-      // Fallback: assume scripts live under src/renderer
-      if (!rendererDir) rendererDir = process.cwd();
 
-      const projectRoot = path.resolve(rendererDir, '../..'); // .../oratr
-      const oratrDocs = path.join(projectRoot, 'docs');
+      // 2) From this module location (robust in ESM)
+      try {
+        // import.meta.url is available in ESM
+        const modulePath = decodeURIComponent(new URL(import.meta.url).pathname);
+        let current = path.dirname(modulePath);
+        for (let i = 0; i < 8 && current && current !== path.dirname(current); i++) {
+          addAttempt(path.join(current, 'docs'));
+          addAttempt(path.join(current, 'oratr', 'docs'));
+          current = path.resolve(current, '..');
+        }
+      } catch (_) {}
+
+      // 3) From cwd (packaged apps often run from install dir)
+      try {
+        addAttempt(path.join(process.cwd(), 'docs'));
+        addAttempt(path.join(process.cwd(), 'oratr', 'docs'));
+      } catch (_) {}
+
+      // 4) From process.resourcesPath (Electron packaged)
+      try {
+        if (process && process.resourcesPath) {
+          addAttempt(path.join(process.resourcesPath, 'docs'));
+          addAttempt(path.join(process.resourcesPath, '..', 'docs'));
+          addAttempt(path.join(process.resourcesPath, '..', 'oratr', 'docs'));
+        }
+      } catch (_) {}
 
       const roots = [];
-      if (fs.existsSync(oratrDocs)) roots.push({ label: 'oratr/docs', dir: oratrDocs });
-      this.roots = roots;
+      for (const candidate of attempts) {
+        try {
+          if (candidate && fs.existsSync(candidate)) {
+            roots.push({ label: path.basename(candidate) === 'docs' ? 'oratr/docs' : candidate, dir: candidate });
+          }
+        } catch (_) {}
+      }
+
+      // De-duplicate by directory
+      const seen = new Set();
+      this.roots = roots.filter(r => (seen.has(r.dir) ? false : (seen.add(r.dir), true)));
     } catch (_) {
       this.roots = [];
     }
@@ -169,10 +217,11 @@ class DocsViewer {
     if (this.activeFile) {
       this.renderMarkdown(this.activeFile.root, this.activeFile);
     } else if (this.filesIndex.length && this.filesIndex[0].files.length) {
-      // Auto-open first file
+      // Auto-open index.md if present, otherwise first file
       const firstRoot = this.filesIndex[0].root;
-      const firstFile = this.filesIndex[0].files[0];
-      this.openFile(firstRoot, firstFile);
+      const files = this.filesIndex[0].files;
+      const indexPref = files.find(f => f.relativePath.toLowerCase().endsWith('index.md')) || files[0];
+      this.openFile(firstRoot, indexPref);
     }
   }
 

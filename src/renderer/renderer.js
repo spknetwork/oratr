@@ -5774,6 +5774,16 @@ function showTab(tabName) {
                 refreshBalance();
             }
             break;
+        case 'docs':
+            try {
+                if (window.docsViewer) {
+                    window.docsViewer.container = document.getElementById('docs-tab');
+                    window.docsViewer.mount();
+                }
+            } catch (e) {
+                console.error('Failed to mount docs viewer:', e);
+            }
+            break;
         case 'storage':
             console.log('[STORAGE TAB] Switching to storage tab');
             console.log('[STORAGE TAB] Dashboard state:', storageDashboardState);
