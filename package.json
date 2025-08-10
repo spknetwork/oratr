@@ -15,7 +15,7 @@
     "lint": "eslint src test --ext .js",
     "lint:fix": "eslint src test --ext .js --fix",
     "install-ffmpeg": "node scripts/install-ffmpeg.js",
-    "prebuild": "npm run install-ffmpeg && node build/download-binaries.js && node build/download-ipfs.js",
+    "prebuild": "npm run install-ffmpeg",
     "build": "electron-builder",
     "build:win": "npm run prebuild && electron-builder --win --publish=never",
     "build:mac": "npm run prebuild && electron-builder --mac dmg zip --publish=never",
@@ -76,6 +76,10 @@
   "build": {
     "appId": "io.spknetwork.oratr",
     "productName": "Oratr",
+    "asarUnpack": [
+      "bin/**",
+      "node_modules/@disregardfiat/proofofaccess/bin/**"
+    ],
     "directories": {
       "output": "dist"
     },
@@ -87,6 +91,13 @@
       "resources/**/*"
     ],
     "extraResources": [
+      {
+        "from": "node_modules/@disregardfiat/proofofaccess/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      },
       {
         "from": "bin",
         "to": "bin",
