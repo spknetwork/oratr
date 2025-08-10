@@ -54,6 +54,7 @@
     "2": "^3.0.0",
     "@disregardfiat/proofofaccess": "0.4.5",
     "@disregardfiat/spk-js": "^1.0.0",
+    "@hiveio/dhive": "^1.3.2",
     "@hiveio/hive-js": "^2.0.8",
     "axios": "^1.6.5",
     "chokidar": "^3.5.3",
