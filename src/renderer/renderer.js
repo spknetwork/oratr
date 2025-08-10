@@ -245,11 +245,102 @@ let networkBrowser = null;
 window.addEventListener('DOMContentLoaded', async () => {
     console.log('[DEBUG] DOMContentLoaded - initializing app');
     console.log('[DEBUG] storageAutoStarting:', storageAutoStarting);
+    // Ensure sidebar/system window is visible even before auth so Docs can be browsed
+    try {
+        const appShell = document.getElementById('app');
+        if (appShell) {
+            appShell.style.display = 'block';
+            appShell.style.opacity = '1';
+            appShell.style.pointerEvents = 'auto';
+        }
+    } catch (_) {}
     // Initialize auth component
     const authContainer = document.getElementById('auth-container');
     authContainer.style.display = 'flex';
     console.log('[DEBUG] About to initialize auth component');
     await window.authComponent.init(authContainer);
+    // Footer login button visibility
+    try {
+        const loginBtn = document.getElementById('login-btn');
+        const updateLoginBtn = () => {
+            if (!loginBtn) return;
+            loginBtn.style.display = isAuthenticated ? 'none' : 'block';
+        };
+        updateLoginBtn();
+        if (loginBtn) loginBtn.addEventListener('click', () => {
+            try {
+                const auth = document.getElementById('auth-container');
+                if (auth) auth.style.display = 'flex';
+                if (window.api && window.api.auth && window.api.auth.hasPinSetup) {
+                    window.api.auth.hasPinSetup().then((hasPin) => {
+                        try {
+                            if (hasPin && window.authComponent && window.authComponent.showUnlock) {
+                                window.authComponent.showUnlock();
+                            } else if (window.authComponent && window.authComponent.showPinSetup) {
+                                window.authComponent.showPinSetup();
+                            }
+                        } catch (_) {}
+                    }).catch(() => {});
+                }
+            } catch (_) {}
+        });
+        window.addEventListener('active-account-changed', () => updateLoginBtn());
+    } catch (_) {}
+    // Wire titlebar buttons to hide to tray
+    try {
+        const { ipcRenderer } = require('electron');
+        const btnClose = document.getElementById('btn-close');
+        const btnMin = document.getElementById('btn-minimize');
+        if (btnClose) btnClose.addEventListener('click', () => ipcRenderer.invoke('window:hide'));
+        if (btnMin) btnMin.addEventListener('click', () => ipcRenderer.invoke('window:minimize'));
+    } catch (_) {}
+
+    // Pre-auth navigation guard: block non-Docs tabs and show auth dialog
+    try {
+        const root = document.getElementById('app');
+        if (root && !isAuthenticated) root.classList.add('unauth');
+
+        function onNavClick(event) {
+            const targetButton = event.target && event.target.closest('button.tab');
+            if (!targetButton) return;
+            const onclickAttr = targetButton.getAttribute('onclick') || '';
+            const match = onclickAttr.match(/showTab\('([^']+)'\)/);
+            const targetTab = match ? match[1] : null;
+            if (!isAuthenticated && targetTab && targetTab !== 'docs') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (typeof event.stopImmediatePropagation === 'function') {
+                    event.stopImmediatePropagation();
+                }
+                const auth = document.getElementById('auth-container');
+                if (auth) auth.style.display = 'flex';
+                if (window.api && window.api.auth && window.api.auth.hasPinSetup) {
+                    window.api.auth.hasPinSetup().then((hasPin) => {
+                        try {
+                            if (hasPin && window.authComponent && window.authComponent.showUnlock) {
+                                window.authComponent.showUnlock();
+                            } else if (window.authComponent && window.authComponent.showPinSetup) {
+                                window.authComponent.showPinSetup();
+                            }
+                        } catch (_) {}
+                    }).catch(() => {});
+                }
+                try { window.showTab('docs'); } catch (_) {}
+            }
+        }
+
+        // Attach to the document to catch any tab button clicks reliably
+        document.addEventListener('click', onNavClick, true);
+
+        // Remove the guard once authenticated to restore normal clicks
+        function removeGuard() {
+            try { document.removeEventListener('click', onNavClick, true); } catch (_) {}
+            const rootEl = document.getElementById('app');
+            if (rootEl) rootEl.classList.remove('unauth');
+        }
+        window.addEventListener('active-account-changed', removeGuard);
+        window.addEventListener('accounts-unlocked', removeGuard);
+    } catch (_) {}
     console.log('[DEBUG] Auth component initialized');
     
     // Check if user is already logged in
@@ -396,6 +487,15 @@ function showApp() {
     document.getElementById('auth-container').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     isAuthenticated = true;
+    // Remove Docs accent once authenticated
+    try {
+        const docsBtn = document.getElementById('docs-tab-button');
+        if (docsBtn) docsBtn.classList.remove('accent');
+        const root = document.getElementById('app');
+        if (root) root.classList.remove('unauth');
+        // Remove any pre-auth click guard explicitly
+        try { document.removeEventListener('click', onNavClick, true); } catch (_) {}
+    } catch (_) {}
     updateWalletLockStatus(false);
     refreshBalance();
     
@@ -875,6 +975,15 @@ async function showTab(tabName) {
     }
     
     currentTab = tabName;
+    // Allow Docs pre-auth; otherwise keep auth prompt visible until login
+    try {
+        const auth = document.getElementById('auth-container');
+        if (tabName === 'docs') {
+            if (auth) auth.style.display = 'none';
+        } else if (!isAuthenticated) {
+            if (auth) auth.style.display = 'flex';
+        }
+    } catch (_) {}
     
     // Run tab-specific initialization
     if (tabName === 'storage') {
@@ -2140,11 +2249,9 @@ async function startStorageNode() {
         // Hide wizard
         document.querySelector('.setup-wizard').style.display = 'none';
         
-        // Show network monitor
-        document.getElementById('storage-network-monitor').style.display = 'block';
-        
-        // Show dashboard
-        document.getElementById('storage-dashboard').style.display = 'block';
+        // Show dashboard (guard for null)
+        const dashboard = document.getElementById('storage-dashboard');
+        if (dashboard) dashboard.style.display = 'block';
         
         // Update dashboard with current stats
         await updateStorageDashboard();
@@ -2773,15 +2880,17 @@ async function initializeStorageTab() {
                 updateStorageTabIndicator(true);
                 
                 // Hide wizard and show dashboard
-                document.querySelector('.setup-wizard').style.display = 'none';
-                document.getElementById('storage-network-monitor').style.display = 'block';
-                document.getElementById('storage-dashboard').style.display = 'block';
+                const wiz = document.querySelector('.setup-wizard');
+                if (wiz) wiz.style.display = 'none';
+                const dashboard = document.getElementById('storage-dashboard');
+                if (dashboard) dashboard.style.display = 'block';
                 await updateStorageDashboard();
             } else {
                 // Show wizard
-                document.querySelector('.setup-wizard').style.display = 'block';
-                document.getElementById('storage-network-monitor').style.display = 'none';
-                document.getElementById('storage-dashboard').style.display = 'none';
+                const wiz2 = document.querySelector('.setup-wizard');
+                if (wiz2) wiz2.style.display = 'block';
+                const dash2 = document.getElementById('storage-dashboard');
+                if (dash2) dash2.style.display = 'none';
                 
                 // Determine which step to show
                 if (!status.ipfs.running) {
@@ -5859,6 +5968,40 @@ function hideApp() {
 // Show tab function
 function showTab(tabName) {
     console.log('[DEBUG] showTab called with:', tabName);
+    // If not authenticated, only allow Docs tab. For other tabs, show auth dialog
+    if (!isAuthenticated && tabName !== 'docs') {
+        try {
+            const docsBtn = document.getElementById('docs-tab-button');
+            if (docsBtn) docsBtn.classList.add('accent');
+            const auth = document.getElementById('auth-container');
+            if (auth) auth.style.display = 'flex';
+            // Pick appropriate screen
+            if (window.api && window.api.auth && window.api.auth.hasPinSetup) {
+                window.api.auth.hasPinSetup().then((hasPin) => {
+                    try {
+                        if (hasPin && window.authComponent && window.authComponent.showUnlock) {
+                            window.authComponent.showUnlock();
+                        } else if (window.authComponent && window.authComponent.showPinSetup) {
+                            window.authComponent.showPinSetup();
+                        }
+                    } catch (_) {}
+                }).catch(() => {});
+            } else if (window.authComponent && window.authComponent.showUnlock) {
+                window.authComponent.showUnlock();
+            }
+        } catch (_) {}
+        // Keep user on Docs until authenticated
+        tabName = 'docs';
+    } else {
+        try {
+            const auth = document.getElementById('auth-container');
+            if (tabName === 'docs') {
+                if (auth) auth.style.display = 'none';
+            } else if (!isAuthenticated) {
+                if (auth) auth.style.display = 'flex';
+            }
+        } catch (_) {}
+    }
     
     // Update current tab
     currentTab = tabName;
@@ -5927,7 +6070,7 @@ function showTab(tabName) {
                 initializeStorageTab();
             }, 50);
             
-            // If we don't have an account and node isn't running, show wizard
+            // If we don't have an account and node isn't running, show wizard (guard DOM)
             if (!currentAccount && !storageDashboardState.running) {
                 // Show wizard only if no account AND not running/starting
                 console.log('[STORAGE TAB] No account and not running/starting, showing wizard');
@@ -5940,7 +6083,7 @@ function showTab(tabName) {
             // Toggle Network Browser visibility based on running state
             const nbSection = document.querySelector('.network-browser-section');
             if (nbSection) {
-                nbSection.style.display = storageDashboardState.running ? 'block' : 'none';
+                nbSection.style.display = (storageDashboardState && storageDashboardState.running) ? 'block' : 'none';
             }
             break;
     }

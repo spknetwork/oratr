@@ -29,6 +29,9 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    frame: false,
+    titleBarStyle: 'hidden',
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -39,6 +42,12 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+  // Ensure menu bar is hidden in dev and prod
+  try {
+    mainWindow.setMenuBarVisibility(false);
+    mainWindow.setAutoHideMenuBar(true);
+  } catch (_) {}
 
   // Window is ready - no need to check storage here as auto-start will handle it
   mainWindow.webContents.on('did-finish-load', () => {
@@ -53,7 +62,7 @@ function createWindow() {
   mainWindow.on('close', (event) => {
     if (!app.isQuiting) {
       event.preventDefault();
-      mainWindow.hide();
+      try { mainWindow.hide(); } catch (_) {}
       
       // Show notification on first minimize to tray
       if (!global.hasShownTrayNotification) {
@@ -432,6 +441,32 @@ async function checkPendingUploadsOnStartup() {
  * Setup IPC handlers
  */
 function setupIPCHandlers() {
+  // Window controls
+  ipcMain.handle('window:hide', async () => {
+    try {
+      if (mainWindow) {
+        mainWindow.hide();
+      }
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  ipcMain.handle('window:minimize', async () => {
+    try {
+      if (mainWindow) {
+        // Hide to tray instead of taskbar minimize
+        mainWindow.hide();
+      }
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  // App version
+  ipcMain.handle('app:getVersion', async () => {
+    return app.getVersion();
+  });
   // PIN management
   ipcMain.handle('auth:hasPinSetup', async () => {
     return services.spkClient.accountManager.hasPinSetup();

@@ -3,6 +3,13 @@
 ## Overview
 
 SPK Desktop is an Electron application that bundles video transcoding (FFmpeg), IPFS storage, and ProofOfAccess (POA) node capabilities into a desktop application for Windows, macOS, and Linux.
+### UI notes (2025-08)
+
+- Sidebar now always renders on startup to allow access to Docs prior to authentication.
+- The Docs tab is briefly accented on first load to help new users find onboarding material.
+- App version is displayed at the bottom of the sidebar; it is fetched from the main process via `app:getVersion`.
+- Sidebar branding stacks the Oratr icon (50% larger) above the centered title.
+
 
 ## Prerequisites
 

@@ -7,13 +7,20 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <div class="window-titlebar" style="pointer-events:none">
+        <div class="titlebar-drag-region"></div>
+        <div class="titlebar-controls" style="pointer-events:auto">
+            <button id="btn-minimize" class="tb-btn" title="Minimize">━</button>
+            <button id="btn-close" class="tb-btn" title="Close">✕</button>
+        </div>
+    </div>
     <!-- Main App -->
     <div id="app" style="display: none;">
 
         <main>
             <div class="app-layout">
                 <aside class="app-sidebar">
-                    <div class="sidebar-brand">
+                    <div class="sidebar-brand brand-stack">
                         <img src="../../resources/images/icons/tray/oratr_icon_alpha.png" alt="Oratr" class="brand-icon" />
                         <span class="brand-name">Oratr</span>
                     </div>
@@ -35,12 +42,13 @@
                             <span class="label">Storage Node</span>
                             <span class="status-indicator"></span>
                         </button>
-                        <button class="tab" onclick="showTab('docs')">
+                        <button class="tab docs-entry" id="docs-tab-button" onclick="showTab('docs')">
                             <span class="icon">📖</span>
                             <span class="label">Docs</span>
                         </button>
                     </nav>
                     <div class="sidebar-footer">
+                        <button id="login-btn" class="sidebar-btn" style="display:none">🔓 Unlock / Login</button>
                         <div class="sidebar-account" onclick="showAccountManager()" title="View account">
                             <img id="account-avatar" class="sidebar-avatar" src="../../resources/images/icons/tray/oratr_icon_alpha.png" alt="Account avatar" />
                             <div class="sidebar-account-info">
@@ -49,6 +57,7 @@
                             </div>
                             <button class="sidebar-gear" aria-label="Open settings" onclick="event.stopPropagation(); settingsModal.show()">⚙️</button>
                         </div>
+                        <div class="sidebar-version" id="sidebar-version">v-</div>
                     </div>
                 </aside>
 
@@ -1011,6 +1020,47 @@
     <script src="components/simple-drag-drop.js"></script>
     <script src="video-processing-native.js"></script>
     <script src="renderer.js"></script>
+    <script>
+        // Allow Docs access immediately and highlight it on first load
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                const docsBtn = document.getElementById('docs-tab-button');
+                if (docsBtn) {
+                    docsBtn.classList.add('accent');
+                    // Make sure clicking works even when auth overlay is shown
+                    docsBtn.addEventListener('click', () => {
+                        const auth = document.getElementById('auth-container');
+                        if (auth) auth.style.pointerEvents = 'none';
+                        showTab('docs');
+                        setTimeout(() => {
+                            if (auth) auth.style.pointerEvents = 'auto';
+                        }, 0);
+                    }, { once: true });
+                }
+            } catch (e) {}
+            // Fetch version
+            try {
+                if (window.api && window.api.app && window.api.app.getVersion) {
+                    window.api.app.getVersion().then(v => {
+                        const sv = document.getElementById('sidebar-version');
+                        if (sv) sv.textContent = `v${v}`;
+                    }).catch(() => {});
+                } else if (window.electron && window.electron.ipcRenderer) {
+                    window.electron.ipcRenderer.invoke('app:getVersion').then(v => {
+                        const sv = document.getElementById('sidebar-version');
+                        if (sv) sv.textContent = `v${v}`;
+                    }).catch(() => {});
+                } else if (window.require) {
+                    // Fallback direct invoke due to nodeIntegration: true
+                    const { ipcRenderer } = require('electron');
+                    ipcRenderer.invoke('app:getVersion').then(v => {
+                        const sv = document.getElementById('sidebar-version');
+                        if (sv) sv.textContent = `v${v}`;
+                    }).catch(() => {});
+                }
+            } catch (e) {}
+        });
+    </script>
     
     <!-- Initialize signing modal -->
     <script>
@@ -1050,9 +1100,9 @@
             const originalShowTab = window.showTab;
             window.showTab = function(tabName) {
                 originalShowTab(tabName);
-                
+                const effectiveTab = window.currentTab || tabName;
                 // Mount drive component when switching to drive tab
-                if (tabName === 'drive') {
+                if (effectiveTab === 'drive') {
                     setTimeout(() => {
                         window.mountDriveComponent();
                     }, 50);
