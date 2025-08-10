@@ -114,7 +114,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref }}
-          release_name: SPK Desktop ${{ github.ref }}
+          release_name: Oratr ${{ github.ref }}
           draft: false
           prerelease: false
 
@@ -133,7 +133,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_appimage.outputs.appimage_path }}
-          asset_name: SPK-Desktop-Linux.AppImage
+          asset_name: Oratr-Linux.AppImage
           asset_content_type: application/octet-stream
 
       - name: Find Linux DEB
@@ -151,7 +151,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_deb.outputs.deb_path }}
-          asset_name: SPK-Desktop-Linux.deb
+          asset_name: Oratr-Linux.deb
           asset_content_type: application/vnd.debian.binary-package
 
       - name: Find Linux RPM
@@ -169,7 +169,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_rpm.outputs.rpm_path }}
-          asset_name: SPK-Desktop-Linux.rpm
+          asset_name: Oratr-Linux.rpm
           asset_content_type: application/x-rpm
 
       - name: Find Windows Installer
@@ -187,7 +187,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_exe.outputs.exe_path }}
-          asset_name: SPK-Desktop-Windows.exe
+          asset_name: Oratr-Windows.exe
           asset_content_type: application/octet-stream
 
       - name: Find Windows Portable ZIP
@@ -205,7 +205,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_winzip.outputs.winzip_path }}
-          asset_name: SPK-Desktop-Windows.zip
+          asset_name: Oratr-Windows.zip
           asset_content_type: application/zip
 
       - name: Find macOS DMG
@@ -223,7 +223,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_dmg.outputs.dmg_path }}
-          asset_name: SPK-Desktop-macOS.dmg
+          asset_name: Oratr-macOS.dmg
           asset_content_type: application/octet-stream
 
       - name: Find macOS ZIP
@@ -241,5 +241,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_maczip.outputs.maczip_path }}
-          asset_name: SPK-Desktop-macOS.zip
+          asset_name: Oratr-macOS.zip
           asset_content_type: application/zip
