@@ -596,6 +596,15 @@ window.api = {
         emergencyLogCleanup: () => ipcRenderer.invoke('storage:emergencyLogCleanup'),
         pruneOldLogs: () => ipcRenderer.invoke('storage:pruneOldLogs')
     },
+    hive: {
+        transfer: (to, amount, asset, memo) => ipcRenderer.invoke('hive:transfer', { to, amount, asset, memo }),
+        powerUp: (amount, to) => ipcRenderer.invoke('hive:powerUp', { amount, to }),
+        powerDown: (hpAmount) => ipcRenderer.invoke('hive:powerDown', { hpAmount }),
+        delegateHP: (delegatee, hpAmount) => ipcRenderer.invoke('hive:delegateHP', { delegatee, hpAmount }),
+        claimRewards: () => ipcRenderer.invoke('hive:claimRewards'),
+        convertToHBD: (amount) => ipcRenderer.invoke('hive:convertToHBD', { amount }),
+        transferToSavings: (amount, asset, memo) => ipcRenderer.invoke('hive:transferToSavings', { amount, asset, memo })
+    },
     spk: {
         registerStorage: (ipfsId, domain, price) => 
             ipcRenderer.invoke('spk:registerStorage', ipfsId, domain, price),
@@ -1510,19 +1519,71 @@ async function claimRewards() {
 
 // Hive operations
 async function powerUpHive() {
-    showNotification('HIVE Power Up functionality coming soon', 'info');
+    try {
+        const amount = parseFloat(document.getElementById('hive-powerup-amount')?.value || '0');
+        if (!amount || amount <= 0) return showNotification('Enter a valid HIVE amount', 'warning');
+        const res = await window.api.invoke('hive:powerUp', { amount });
+        if (res && res.success) {
+            showNotification('Power up submitted', 'success');
+            await refreshHiveBalance();
+        } else {
+            showNotification(res?.error || 'Power up failed', 'error');
+        }
+    } catch (e) {
+        showNotification(e.message || 'Power up failed', 'error');
+    }
 }
 
 async function convertToHBD() {
-    showNotification('Convert to HBD functionality coming soon', 'info');
+    try {
+        const amount = parseFloat(document.getElementById('convert-hbd-amount')?.value || '0');
+        if (!amount || amount <= 0) return showNotification('Enter a valid HIVE amount', 'warning');
+        const res = await window.api.invoke('hive:convertToHBD', { amount });
+        if (res && res.success) {
+            showNotification('Conversion submitted', 'success');
+            await refreshHiveBalance();
+        } else {
+            showNotification(res?.error || 'Conversion failed', 'error');
+        }
+    } catch (e) {
+        showNotification(e.message || 'Conversion failed', 'error');
+    }
 }
 
 async function transferToSavings(token) {
-    showNotification(`Transfer ${token} to Savings functionality coming soon`, 'info');
+    try {
+        const amount = parseFloat(document.getElementById('savings-amount')?.value || '0');
+        const memo = document.getElementById('savings-memo')?.value || '';
+        const asset = token === 'HBD' ? 'HBD' : 'HIVE';
+        if (!amount || amount <= 0) return showNotification('Enter a valid amount', 'warning');
+        const res = await window.api.invoke('hive:transferToSavings', { amount, asset, memo });
+        if (res && res.success) {
+            showNotification('Transfer to savings submitted', 'success');
+            await refreshHiveBalance();
+        } else {
+            showNotification(res?.error || 'Savings transfer failed', 'error');
+        }
+    } catch (e) {
+        showNotification(e.message || 'Savings transfer failed', 'error');
+    }
 }
 
 async function delegateHP() {
-    showNotification('Delegate HP functionality coming soon', 'info');
+    try {
+        const delegatee = document.getElementById('delegate-hp-to')?.value || '';
+        const hp = parseFloat(document.getElementById('delegate-hp-amount')?.value || '0');
+        if (!delegatee) return showNotification('Enter delegatee', 'warning');
+        if (!hp || hp <= 0) return showNotification('Enter a valid HP amount', 'warning');
+        const res = await window.api.invoke('hive:delegateHP', { delegatee, hpAmount: hp });
+        if (res && res.success) {
+            showNotification('Delegation submitted', 'success');
+            await refreshHiveBalance();
+        } else {
+            showNotification(res?.error || 'Delegation failed', 'error');
+        }
+    } catch (e) {
+        showNotification(e.message || 'Delegation failed', 'error');
+    }
 }
 
 async function delegateRC() {
@@ -1530,7 +1591,19 @@ async function delegateRC() {
 }
 
 async function powerDownHive() {
-    showNotification('HIVE Power Down functionality coming soon', 'info');
+    try {
+        const hp = parseFloat(document.getElementById('powerdown-hp-amount')?.value || '0');
+        if (!hp || hp <= 0) return showNotification('Enter a valid HP amount', 'warning');
+        const res = await window.api.invoke('hive:powerDown', { hpAmount: hp });
+        if (res && res.success) {
+            showNotification('Power down started', 'success');
+            await refreshHiveBalance();
+        } else {
+            showNotification(res?.error || 'Power down failed', 'error');
+        }
+    } catch (e) {
+        showNotification(e.message || 'Power down failed', 'error');
+    }
 }
 
 async function setWithdrawalRoute() {
@@ -1546,7 +1619,17 @@ async function withdrawFromSavings() {
 }
 
 async function claimHiveRewards() {
-    showNotification('Claim Hive Rewards functionality coming soon', 'info');
+    try {
+        const res = await window.api.invoke('hive:claimRewards');
+        if (res && res.success) {
+            showNotification('Rewards claim submitted', 'success');
+            await refreshHiveBalance();
+        } else {
+            showNotification(res?.error || 'Claim failed', 'error');
+        }
+    } catch (e) {
+        showNotification(e.message || 'Claim failed', 'error');
+    }
 }
 
 function showTransactionHistory() {

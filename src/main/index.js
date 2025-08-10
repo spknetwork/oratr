@@ -614,6 +614,132 @@ function setupIPCHandlers() {
     }
   });
 
+  // Hive chain operations
+  const dhive = require('@hiveio/dhive');
+  const hiveClient = new dhive.Client(['https://api.hive.blog']);
+
+  function formatAssetAmount(amount, symbol, precision = 3) {
+    const n = Number(amount || 0);
+    return `${n.toFixed(precision)} ${symbol}`;
+  }
+
+  async function hpToVests(hpAmount) {
+    const props = await hiveClient.database.getDynamicGlobalProperties();
+    const totalVestingShares = parseFloat(props.total_vesting_shares.split(' ')[0]);
+    const totalVestingFundHive = parseFloat(props.total_vesting_fund_hive.split(' ')[0]);
+    const vestsPerHP = totalVestingShares / totalVestingFundHive; // VESTS per HIVE POWER
+    const vests = Number(hpAmount || 0) * vestsPerHP;
+    return `${vests.toFixed(6)} VESTS`;
+  }
+
+  ipcMain.handle('hive:transfer', async (event, { to, amount, asset, memo = '' }) => {
+    try {
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const from = active.username;
+      const op = ['transfer', { from, to, amount: formatAssetAmount(amount, asset || 'HIVE'), memo }];
+      const tx = { operations: [op] };
+      const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hive:powerUp', async (event, { to = null, amount }) => {
+    try {
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const from = active.username;
+      const op = ['transfer_to_vesting', { from, to: to || from, amount: formatAssetAmount(amount, 'HIVE') }];
+      const tx = { operations: [op] };
+      const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hive:powerDown', async (event, { hpAmount }) => {
+    try {
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const account = active.username;
+      const vesting_shares = await hpToVests(hpAmount);
+      const op = ['withdraw_vesting', { account, vesting_shares }];
+      const tx = { operations: [op] };
+      const result = await services.spkClient.accountManager.signAndBroadcast(account, tx, 'active');
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hive:delegateHP', async (event, { delegatee, hpAmount }) => {
+    try {
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const delegator = active.username;
+      const vesting_shares = await hpToVests(hpAmount);
+      const op = ['delegate_vesting_shares', { delegator, delegatee, vesting_shares }];
+      const tx = { operations: [op] };
+      const result = await services.spkClient.accountManager.signAndBroadcast(delegator, tx, 'active');
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hive:claimRewards', async () => {
+    try {
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const account = active.username;
+      // Fetch current pending rewards
+      const accounts = await hiveClient.database.getAccounts([account]);
+      const a = accounts[0];
+      const reward_hive = a.reward_hive_balance || '0.000 HIVE';
+      const reward_hbd = a.reward_hbd_balance || '0.000 HBD';
+      const reward_vests = a.reward_vesting_balance || '0.000000 VESTS';
+      const op = ['claim_reward_balance', { account, reward_hive, reward_hbd, reward_vests }];
+      const tx = { operations: [op] };
+      const result = await services.spkClient.accountManager.signAndBroadcast(account, tx, 'posting');
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hive:convertToHBD', async (event, { amount }) => {
+    try {
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const owner = active.username;
+      const op = ['convert', { owner, requestid: Date.now(), amount: formatAssetAmount(amount, 'HIVE') }];
+      const tx = { operations: [op] };
+      const result = await services.spkClient.accountManager.signAndBroadcast(owner, tx, 'active');
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('hive:transferToSavings', async (event, { amount, asset, memo = '' }) => {
+    try {
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const from = active.username;
+      const to = from;
+      const op = ['transfer_to_savings', { from, to, amount: formatAssetAmount(amount, asset || 'HIVE'), memo }];
+      const tx = { operations: [op] };
+      const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+
   // Video operations
   ipcMain.handle('video:analyze', async (event, videoPath) => {
     return services.transcoder.analyzeVideo(videoPath);

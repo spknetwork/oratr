@@ -38,14 +38,12 @@ class SigningModal {
                                 <h6>Account:</h6>
                                 <p id="txAccount" class="text-muted"></p>
                             </div>
-                            
-                            <div class="form-check">
+                            <div class="form-check" id="autoSignSection" style="display:none;">
                                 <input type="checkbox" id="autoSignCheckbox">
                                 <label for="autoSignCheckbox">
-                                    Automatically sign similar transactions
+                                    Automatically sign similar transactions (SPK only)
                                 </label>
                             </div>
-                            
                             <div class="signing-modal-actions">
                                 <button type="button" class="btn btn-secondary" onclick="signingModal.reject()">
                                     Cancel
@@ -75,7 +73,7 @@ class SigningModal {
             this.reject();
         });
         
-        // Add auto-sign preferences modal
+        // Add auto-sign preferences modal (used only for SPK ops)
         this.addAutoSignPreferencesModal();
     }
 
@@ -219,19 +217,19 @@ class SigningModal {
                                 <div class="form-check">
                                     <input type="checkbox" id="autoSignTransfer" disabled>
                                     <label class="form-check-label" for="autoSignTransfer">
-                                        Token Transfers (Never auto-sign)
+                                        Hive Transfers (Never auto-sign)
                                     </label>
                                 </div>
                                 <div class="form-check">
                                     <input type="checkbox" id="autoSignContract">
                                     <label for="autoSignContract">
-                                        Storage Contracts
+                                        Storage Contracts (spkccT_channel_open)
                                     </label>
                                 </div>
                                 <div class="form-check">
                                     <input type="checkbox" id="autoSignUpload">
                                     <label for="autoSignUpload">
-                                        File Uploads
+                                        SPK File Ops (store/remove)
                                     </label>
                                 </div>
                                 <div class="form-check">
@@ -243,8 +241,8 @@ class SigningModal {
                             </div>
                             
                             <div class="signing-alert" style="background: #ff9800; margin-top: 20px;">
-                                <strong>Security Notice:</strong> Auto-signing bypasses transaction review. 
-                                Only enable for operations you trust.
+                                <strong>Security Notice:</strong> Auto-signing bypasses transaction review.
+                                Only enable for SPK operations you trust.
                             </div>
                             
                             <div class="signing-modal-actions">
@@ -258,26 +256,24 @@ class SigningModal {
                         </div>
                     </div>
                 </div>
-            </div>
-        `;
+            </div>`;
         
         document.body.insertAdjacentHTML('beforeend', prefsHTML);
-        
-        // Add backdrop click handler for auto-sign prefs modal
         const prefsModal = document.getElementById('autoSignPrefsModal');
         const prefsBackdrop = prefsModal.querySelector('.signing-modal-backdrop');
-        prefsBackdrop.addEventListener('click', () => {
-            prefsModal.style.display = 'none';
-        });
+        prefsBackdrop.addEventListener('click', () => { prefsModal.style.display = 'none'; });
     }
 
     async requestSignature(transaction, keyType = 'posting', account = null) {
         return new Promise((resolve, reject) => {
             this.currentRequest = { resolve, reject };
             
-            // Check if auto-sign is enabled for this operation type
+            // Determine operation type and SPK/Hive category
             const opType = this.getOperationType(transaction);
-            if (this.shouldAutoSign(opType)) {
+            const isSpk = this.isSpkOperation(transaction);
+            
+            // Auto-sign only for SPK operations, if enabled in preferences
+            if (isSpk && this.shouldAutoSign(opType)) {
                 resolve({ autoSigned: true });
                 return;
             }
@@ -287,10 +283,14 @@ class SigningModal {
             document.getElementById('txDetails').textContent = JSON.stringify(transaction.operations || transaction, null, 2);
             document.getElementById('txKeyType').textContent = keyType.toUpperCase();
             document.getElementById('txAccount').textContent = account || window.currentAccount || 'Unknown';
-            
-            // Reset checkbox
-            document.getElementById('autoSignCheckbox').checked = false;
-            
+            // Show/hide auto-sign UI based on category
+            const autoSignSection = document.getElementById('autoSignSection');
+            if (autoSignSection) {
+                autoSignSection.style.display = isSpk ? 'block' : 'none';
+                const chk = document.getElementById('autoSignCheckbox');
+                if (chk) chk.checked = false;
+            }
+
             // Show modal
             this.showModal();
         });
@@ -298,12 +298,16 @@ class SigningModal {
 
     approve() {
         if (this.currentRequest) {
-            // Check if auto-sign was enabled
-            const autoSign = document.getElementById('autoSignCheckbox').checked;
-            if (autoSign) {
-                this.enableAutoSignForCurrentType();
+            let autoSign = false;
+            const chk = document.getElementById('autoSignCheckbox');
+            if (chk && chk.checked) {
+                const opType = document.getElementById('txType')?.textContent || '';
+                if (this.shouldAutoSign(opType) === false) {
+                    // Enable based on current op type
+                    this.enableAutoSignForCurrentType();
+                }
+                autoSign = true;
             }
-            
             this.currentRequest.resolve({ approved: true, autoSign });
             this.currentRequest = null;
             this.hideModal();
@@ -315,6 +319,20 @@ class SigningModal {
             this.currentRequest.reject(new Error('User rejected transaction'));
             this.currentRequest = null;
             this.hideModal();
+        }
+    }
+
+    isSpkOperation(transaction) {
+        try {
+            if (!transaction || !transaction.operations || !transaction.operations.length) return false;
+            const op = transaction.operations[0];
+            const opName = op[0];
+            const opData = op[1] || {};
+            if (opName !== 'custom_json') return false;
+            const id = (opData && (opData.id || opData.identifier)) || '';
+            return typeof id === 'string' && id.toLowerCase().startsWith('spkcc');
+        } catch (_) {
+            return false;
         }
     }
 
