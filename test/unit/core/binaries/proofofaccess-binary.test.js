@@ -101,9 +101,9 @@ describe('ProofOfAccess Binary Wrapper', () => {
     it('should use npm package if available', () => {
       setPlatform('linux', 'x64');
       
-      // Mock @spk-network/proofofaccess package
-      jest.doMock('@spk-network/proofofaccess', () => ({
-        path: '/node_modules/@spk-network/proofofaccess/bin/proofofaccess'
+      // Mock @disregardfiat/proofofaccess package
+      jest.doMock('@disregardfiat/proofofaccess', () => ({
+        path: '/node_modules/@disregardfiat/proofofaccess/bin/proofofaccess'
       }), { virtual: true });
       
       fs.existsSync.mockReturnValue(true);
@@ -111,7 +111,7 @@ describe('ProofOfAccess Binary Wrapper', () => {
       poaBinary = require('../../../../src/core/binaries/proofofaccess-binary');
       const binaryPath = poaBinary.getBinaryPath();
       
-      expect(binaryPath).toBe('/node_modules/@spk-network/proofofaccess/bin/proofofaccess');
+      expect(binaryPath).toBe('/node_modules/@disregardfiat/proofofaccess/bin/proofofaccess');
     });
     
     it('should use production path in Electron app', () => {

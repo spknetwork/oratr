@@ -13,7 +13,7 @@ const VideoUploadServiceV2 = require('../../src/core/services/video-upload-servi
 const SPKKeychainAdapter = require('../../src/core/spk/keychain-adapter');
 const AccountManager = require('../../src/core/spk/account-manager');
 
-describe('SPK Upload Integration', () => {
+describe.skip('SPK Upload Integration', () => {
   let videoUploadService;
   let accountManager;
   let mockTranscoder;

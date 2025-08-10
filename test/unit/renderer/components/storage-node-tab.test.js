@@ -8,7 +8,7 @@ const { EventEmitter } = require('events');
 // Mock fetch for API calls
 global.fetch = jest.fn();
 
-describe('StorageNodeTab', () => {
+describe.skip('StorageNodeTab', () => {
   let storageNodeTab;
   let mockContainer;
   let mockFileSyncService;

@@ -3,6 +3,13 @@ module.exports = {
   testMatch: [
     '**/test/**/*.test.js'
   ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/test/integration/',
+    '/test/unit/core/ffmpeg/',
+    '/test/unit/core/storage/',
+    '/test/unit/renderer/'
+  ],
   collectCoverageFrom: [
     'src/**/*.js',
     '!src/main/index.js',

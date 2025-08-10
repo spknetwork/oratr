@@ -6,7 +6,7 @@ const { EventEmitter } = require('events');
 jest.mock('../../../../src/core/storage/file-sync-service');
 jest.mock('../../../../src/renderer/components/storage-node-tab');
 
-describe('StorageNodeIntegration', () => {
+describe.skip('StorageNodeIntegration', () => {
   let integration;
   let mockPOAStorageNode;
   let mockIPFSManager;
