@@ -42,7 +42,7 @@
                             <span class="label">Storage Node</span>
                             <span class="status-indicator"></span>
                         </button>
-                        <button class="tab docs-entry" id="docs-tab-button" onclick="showTab('docs')">
+                        <button class="tab" id="docs-tab-button" onclick="showTab('docs')">
                             <span class="icon">📖</span>
                             <span class="label">Docs</span>
                         </button>
@@ -1036,6 +1036,13 @@
                             if (auth) auth.style.pointerEvents = 'auto';
                         }, 0);
                     }, { once: true });
+                }
+            } catch (e) {}
+            // Clear accent if already authenticated on load
+            try {
+                if (window.isAuthenticated) {
+                    const docsBtn = document.getElementById('docs-tab-button');
+                    if (docsBtn) docsBtn.classList.remove('accent');
                 }
             } catch (e) {}
             // Fetch version

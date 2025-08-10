@@ -559,13 +559,24 @@ function updateWalletLockStatus(locked) {
 function updateAccountDisplay() {
     const accountName = document.getElementById('account-name');
     const accountBalance = document.getElementById('account-balance');
+    const accountAvatar = document.getElementById('account-avatar');
     
     if (currentAccount) {
         if (accountName) accountName.textContent = currentAccount;
+        // Try to render a Hive-style avatar if available
+        try {
+            if (accountAvatar && currentAccount) {
+                // If you have a preferred avatar service, set it here. Using hive.blog as a fallback.
+                accountAvatar.src = `https://images.hive.blog/u/${encodeURIComponent(currentAccount)}/avatar`; 
+            }
+        } catch (_) {}
         // Balance will be updated by refreshBalance()
     } else {
         if (accountName) accountName.textContent = 'No account';
         if (accountBalance) accountBalance.innerHTML = '';
+        if (accountAvatar) {
+            accountAvatar.src = '../../resources/images/icons/tray/oratr_icon_alpha.png';
+        }
     }
 }
 
@@ -975,6 +986,15 @@ async function showTab(tabName) {
     }
     
     currentTab = tabName;
+    // Defensive: if authenticated, ensure Docs accent and unauth class are cleared
+    try {
+        if (isAuthenticated) {
+            const docsBtn = document.getElementById('docs-tab-button');
+            if (docsBtn) docsBtn.classList.remove('accent');
+            const root = document.getElementById('app');
+            if (root) root.classList.remove('unauth');
+        }
+    } catch (_) {}
     // Allow Docs pre-auth; otherwise keep auth prompt visible until login
     try {
         const auth = document.getElementById('auth-container');
@@ -5891,6 +5911,14 @@ function showApp() {
     if (authContainer) {
         authContainer.style.display = 'none';
     }
+
+    // Defensive: ensure Docs accent cleared post-login
+    try {
+        const docsBtn = document.getElementById('docs-tab-button');
+        if (docsBtn) docsBtn.classList.remove('accent');
+        const appRoot = document.getElementById('app');
+        if (appRoot) appRoot.classList.remove('unauth');
+    } catch (_) {}
     
     if (app) {
         app.style.display = 'block';
