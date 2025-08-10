@@ -1,5 +1,7 @@
 # SPK Desktop Development Guide
 
+github.com/spknetwork/oratr
+
 ## Test-Driven Development Workflow
 
 This project follows strict TDD principles. Here's the development workflow:

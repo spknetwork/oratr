@@ -18,7 +18,7 @@
     "prebuild": "npm run install-ffmpeg && node build/download-binaries.js && node build/download-ipfs.js",
     "build": "electron-builder",
     "build:win": "npm run prebuild && electron-builder --win --publish=never",
-    "build:mac": "npm run prebuild && electron-builder --mac --publish=never",
+    "build:mac": "npm run prebuild && electron-builder --mac dmg zip --publish=never",
     "build:linux": "npm run prebuild && electron-builder --linux --publish=never",
     "postinstall": "electron-builder install-app-deps && node scripts/fix-perms.js && node scripts/install-ffmpeg.js"
   },
@@ -99,6 +99,7 @@
       "category": "public.app-category.video",
       "icon": "resources/images/icons/mac/icon.icns",
       "target": [
+        "dmg",
         "zip"
       ]
     },

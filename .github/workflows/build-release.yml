@@ -6,9 +6,14 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -25,6 +30,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install Linux packaging deps
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y rpm
 
       - name: Run tests
         run: npm test
@@ -102,7 +111,7 @@ jobs:
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref }}
           release_name: SPK Desktop ${{ github.ref }}
@@ -120,12 +129,48 @@ jobs:
         if: steps.find_appimage.outputs.appimage_path != ''
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_appimage.outputs.appimage_path }}
           asset_name: SPK-Desktop-Linux.AppImage
           asset_content_type: application/octet-stream
+
+      - name: Find Linux DEB
+        id: find_deb
+        run: |
+          DEB=$(find linux-builds -name "*.deb" -type f | head -1)
+          echo "deb_path=$DEB" >> $GITHUB_OUTPUT
+          echo "Found DEB: $DEB"
+
+      - name: Upload Linux DEB
+        if: steps.find_deb.outputs.deb_path != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.find_deb.outputs.deb_path }}
+          asset_name: SPK-Desktop-Linux.deb
+          asset_content_type: application/vnd.debian.binary-package
+
+      - name: Find Linux RPM
+        id: find_rpm
+        run: |
+          RPM=$(find linux-builds -name "*.rpm" -type f | head -1)
+          echo "rpm_path=$RPM" >> $GITHUB_OUTPUT
+          echo "Found RPM: $RPM"
+
+      - name: Upload Linux RPM
+        if: steps.find_rpm.outputs.rpm_path != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.find_rpm.outputs.rpm_path }}
+          asset_name: SPK-Desktop-Linux.rpm
+          asset_content_type: application/x-rpm
 
       - name: Find Windows Installer
         id: find_exe
@@ -138,12 +183,30 @@ jobs:
         if: steps.find_exe.outputs.exe_path != ''
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_exe.outputs.exe_path }}
           asset_name: SPK-Desktop-Windows.exe
           asset_content_type: application/octet-stream
+
+      - name: Find Windows Portable ZIP
+        id: find_winzip
+        run: |
+          WINZIP=$(find windows-builds -name "*-win.zip" -type f | head -1)
+          echo "winzip_path=$WINZIP" >> $GITHUB_OUTPUT
+          echo "Found Windows ZIP: $WINZIP"
+
+      - name: Upload Windows Portable ZIP
+        if: steps.find_winzip.outputs.winzip_path != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.find_winzip.outputs.winzip_path }}
+          asset_name: SPK-Desktop-Windows.zip
+          asset_content_type: application/zip
 
       - name: Find macOS DMG
         id: find_dmg
@@ -156,9 +219,27 @@ jobs:
         if: steps.find_dmg.outputs.dmg_path != ''
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_dmg.outputs.dmg_path }}
           asset_name: SPK-Desktop-macOS.dmg
           asset_content_type: application/octet-stream
+
+      - name: Find macOS ZIP
+        id: find_maczip
+        run: |
+          MACZIP=$(find macos-builds -name "*-mac.zip" -type f | head -1)
+          echo "maczip_path=$MACZIP" >> $GITHUB_OUTPUT
+          echo "Found macOS ZIP: $MACZIP"
+
+      - name: Upload macOS ZIP
+        if: steps.find_maczip.outputs.maczip_path != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.find_maczip.outputs.maczip_path }}
+          asset_name: SPK-Desktop-macOS.zip
+          asset_content_type: application/zip

@@ -387,6 +387,7 @@ main {
 .content-area {
     overflow: hidden;
     padding: 2rem; /* Preserve interior spacing moved from main */
+    position: relative; /* Allow wallet modals to overlay only the content area */
 }
 
 .tabs {
@@ -1404,6 +1405,15 @@ button:active {
     justify-content: center;
     align-items: center;
     z-index: 1000;
+}
+
+/* Wallet-only modal overlay constrained to the content area (excludes sidebar) */
+.wallet-modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
 }
 
 .modal-content {

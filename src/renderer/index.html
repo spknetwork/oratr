@@ -474,6 +474,7 @@
                 <!-- Wallet Sub-tabs -->
                 <div class="wallet-tabs">
                     <button class="wallet-tab active" onclick="showWalletTab('spk')">SPK Network</button>
+                     <button class="wallet-tab" onclick="showWalletTab('market')">Market</button>
                     <button class="wallet-tab" onclick="showWalletTab('hive')">Hive Blockchain</button>
                 </div>
 
@@ -681,6 +682,24 @@
                                 <div class="token-badges">
                                     <span class="badge">NATIVE</span>
                                 </div>
+
+                 <!-- Market Wallet Tab -->
+                 <div id="market-wallet-tab" class="wallet-tab-content">
+                     <div class="token-card">
+                         <div class="token-header">
+                             <div class="token-icon">🔁</div>
+                             <div class="token-info">
+                                 <h4>Market</h4>
+                                 <div class="token-badges">
+                                     <span class="badge">DEX</span>
+                                 </div>
+                             </div>
+                         </div>
+                         <div class="token-actions">
+                             <button class="btn btn-secondary" disabled>DEX Coming Soon</button>
+                         </div>
+                     </div>
+                 </div>
                             </div>
                             <div class="token-balance">
                                 <span id="hive-balance">--</span> HIVE
@@ -691,9 +710,9 @@
                             <div class="dropdown">
                                 <button class="btn btn-secondary dropdown-toggle">More</button>
                                 <div class="dropdown-menu">
-                                    <button onclick="powerUpHive()">Power Up</button>
-                                    <button onclick="convertToHBD()">Convert to HBD</button>
-                                    <button onclick="transferToSavings('HIVE')">Transfer to Savings</button>
+                            <button onclick="openHivePowerUpModal()">Power Up</button>
+                                    <button onclick="openConvertHBDModal()">Convert to HBD</button>
+                                    <button onclick="openTransferToSavingsModal('HIVE')">Transfer to Savings</button>
                                 </div>
                             </div>
                             <button onclick="openMarket('HIVE')" class="btn btn-secondary">Market</button>
@@ -777,7 +796,7 @@
                         </div>
                         <div class="token-actions">
                             <button onclick="sendToken('HBD')" class="btn btn-primary">Send</button>
-                            <button onclick="transferToSavings('HBD')" class="btn btn-secondary">Transfer to Savings</button>
+                            <button onclick="openTransferToSavingsModal('HBD')" class="btn btn-secondary">Transfer to Savings</button>
                         </div>
                     </div>
 
@@ -839,13 +858,17 @@
             </div>
 
             <!-- Transaction Modals -->
-            <div id="send-modal" class="modal" style="display: none;">
+            <div id="send-modal" class="modal wallet-modal" style="display: none;">
                 <div class="modal-content">
                     <h3>Send <span id="send-token-type">Token</span></h3>
                     <form id="send-form">
                         <div class="form-group">
                             <label>To:</label>
                             <input type="text" id="send-to" placeholder="Username" required>
+                            <div class="account-validate" style="display:flex;align-items:center;gap:0.5rem;margin-top:0.25rem;">
+                                <img id="send-avatar" alt="avatar" style="width:24px;height:24px;border-radius:50%;display:none;" />
+                                <small id="send-account-status" style="opacity:0.8;"></small>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Amount:</label>
@@ -857,13 +880,75 @@
                         </div>
                         <div class="modal-actions">
                             <button type="button" onclick="closeSendModal()" class="btn btn-secondary">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Send</button>
+                            <button id="send-submit" type="submit" class="btn btn-primary" disabled>Send</button>
                         </div>
                     </form>
                 </div>
             </div>
 
-            <div id="powerup-modal" class="modal" style="display: none;">
+            <!-- Hive Power Up Modal -->
+            <div id="hive-powerup-modal" class="modal wallet-modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Power Up HIVE</h3>
+                    <form id="hive-powerup-form">
+                        <div class="form-group">
+                            <label>Amount (HIVE):</label>
+                            <input type="number" id="hive-powerup-amount" step="0.001" min="0" placeholder="0.000" required>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" onclick="closeHivePowerUpModal()" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Power Up</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Convert to HBD Modal -->
+            <div id="convert-hbd-modal" class="modal wallet-modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Convert HIVE to HBD</h3>
+                    <form id="convert-hbd-form">
+                        <div class="form-group">
+                            <label>Amount (HIVE):</label>
+                            <input type="number" id="convert-hbd-amount" step="0.001" min="0" placeholder="0.000" required>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" onclick="closeConvertHBDModal()" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Convert</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Transfer to Savings Modal -->
+            <div id="savings-modal" class="modal wallet-modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Transfer to Savings</h3>
+                    <form id="savings-form">
+                        <div class="form-group">
+                            <label>Asset:</label>
+                            <select id="savings-asset">
+                                <option value="HIVE">HIVE</option>
+                                <option value="HBD">HBD</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Amount:</label>
+                            <input type="number" id="savings-amount" step="0.001" min="0" placeholder="0.000" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Memo (optional):</label>
+                            <input type="text" id="savings-memo" placeholder="Optional memo">
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" onclick="closeSavingsModal()" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Transfer</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div id="powerup-modal" class="modal wallet-modal" style="display: none;">
                 <div class="modal-content">
                     <h3>Power Up <span id="powerup-token-type">LARYNX</span></h3>
                     <form id="powerup-form">
@@ -880,7 +965,7 @@
                 </div>
             </div>
 
-            <div id="powerdown-modal" class="modal" style="display: none;">
+            <div id="powerdown-modal" class="modal wallet-modal" style="display: none;">
                 <div class="modal-content">
                     <h3>Power Down <span id="powerdown-token-type">LARYNX</span></h3>
                     <form id="powerdown-form">
@@ -900,7 +985,7 @@
                 </div>
             </div>
 
-            <div id="delegate-modal" class="modal" style="display: none;">
+            <div id="delegate-modal" class="modal wallet-modal" style="display: none;">
                 <div class="modal-content">
                     <h3>Delegate <span id="delegate-token-type">LARYNX Power</span></h3>
                     <form id="delegate-form">

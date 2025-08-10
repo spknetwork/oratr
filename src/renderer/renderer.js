@@ -714,7 +714,13 @@ window.api = {
         delegateHP: (delegatee, hpAmount) => ipcRenderer.invoke('hive:delegateHP', { delegatee, hpAmount }),
         claimRewards: () => ipcRenderer.invoke('hive:claimRewards'),
         convertToHBD: (amount) => ipcRenderer.invoke('hive:convertToHBD', { amount }),
-        transferToSavings: (amount, asset, memo) => ipcRenderer.invoke('hive:transferToSavings', { amount, asset, memo })
+        transferToSavings: (amount, asset, memo) => ipcRenderer.invoke('hive:transferToSavings', { amount, asset, memo }),
+        getAccount: (username) => ipcRenderer.invoke('hive:getAccount', { username })
+    },
+    token: {
+        transfer: (to, amount, token, memo, options) => ipcRenderer.invoke('token:transfer', to, amount, token, memo, options),
+        powerUp: (amount, options) => ipcRenderer.invoke('token:powerUp', amount, options),
+        powerDown: (amount, options) => ipcRenderer.invoke('token:powerDown', amount, options)
     },
     spk: {
         registerStorage: (ipfsId, domain, price) => 
@@ -1084,48 +1090,52 @@ async function refreshSPKBalance() {
         const result = await window.api.balance.get(true);
         
         if (result.success) {
-            const balances = result.balances;
-            
-            // Update SPK balance
-            const spkBalance = balances.spk || 0;
+            const b = result.balances;
+            const scale = 1000; // protocol precision for SPK/LARYNX/BROCA is 3
+
+            // Raw integer balances (thousandths) → display units
+            const spk = Number(b.SPK?.balance ?? b.spk ?? 0) / scale;
+            const larynxLiquid = Number(b.LARYNX?.balance ?? b.larynx ?? 0) / scale;
+            const larynxStaked = Number(b.LARYNX?.staked ?? b.larynxPower ?? 0) / scale;
+            const larynxDelegIn = Number(b.LARYNX?.delegatedIn ?? 0) / scale;
+            const larynxDelegOut = Number(b.LARYNX?.delegatedOut ?? 0) / scale;
+            const brocaAvail = Number(b.BROCA?.available ?? b.broca ?? 0) / scale;
+            const brocaRegen = Number(b.BROCA?.regeneration ?? 0); // rate, leave as-is unless units provided
+
             const spkEl = document.getElementById('spk-balance');
-            if (spkEl) spkEl.textContent = spkBalance.toFixed(3);
-            
-            // Update LARYNX balance
-            const larynxBalance = balances.larynx || 0;
+            if (spkEl) spkEl.textContent = spk.toFixed(3);
+
             const larynxEl = document.getElementById('larynx-balance');
-            if (larynxEl) larynxEl.textContent = larynxBalance.toFixed(3);
-            
-            // For now, set staked to 0 until we get proper data
+            if (larynxEl) larynxEl.textContent = larynxLiquid.toFixed(3);
+
             const larynxPowerEl = document.getElementById('larynx-power-balance');
-            if (larynxPowerEl) larynxPowerEl.textContent = '0.000';
-            
-            // Update delegation summary (set to 0 for now)
+            if (larynxPowerEl) larynxPowerEl.textContent = larynxStaked.toFixed(3);
+
             const delegationReceivedEl = document.getElementById('delegation-received');
+            if (delegationReceivedEl) delegationReceivedEl.textContent = larynxDelegIn.toFixed(3);
             const delegationSentEl = document.getElementById('delegation-sent');
-            if (delegationReceivedEl) delegationReceivedEl.textContent = '0.000';
-            if (delegationSentEl) delegationSentEl.textContent = '0.000';
-            
-            // Update BROCA
-            const brocaBalance = balances.broca || 0;
+            if (delegationSentEl) delegationSentEl.textContent = larynxDelegOut.toFixed(3);
+
             const brocaAvailableEl = document.getElementById('broca-available');
+            if (brocaAvailableEl) brocaAvailableEl.textContent = brocaAvail.toFixed(3);
             const brocaRegenEl = document.getElementById('broca-regen');
-            
-            if (brocaAvailableEl) brocaAvailableEl.textContent = brocaBalance.toFixed(0);
-            if (brocaRegenEl) brocaRegenEl.textContent = '0.0'; // Set to 0 for now
-            
-            // Update BROCA bar (assume max 1000 BROCA for percentage)
-            const brocaPercentage = Math.min(brocaBalance / 1000 * 100, 100);
+            if (brocaRegenEl) brocaRegenEl.textContent = brocaRegen.toFixed(1);
+
             const brocaFill = document.getElementById('broca-fill');
             if (brocaFill) {
-                brocaFill.style.width = brocaPercentage + '%';
+                const pct = Math.min(100, (brocaAvail / 1 /* 1 BROCA */) * 100);
+                brocaFill.style.width = pct + '%';
             }
             
             // Update mini balance in header
             const accountBalance = document.getElementById('account-balance');
             if (accountBalance) {
                 accountBalance.innerHTML = `
-                    <span class="balance-item">BROCA: ${brocaBalance.toFixed(0)}</span>
+                    <span class="balance-item">${spk.toFixed(3)} SPK</span>
+                    <span class="balance-sep">•</span>
+                    <span class="balance-item">${larynxLiquid.toFixed(3)} LARYNX</span>
+                    <span class="balance-sep">•</span>
+                    <span class="balance-item">${Math.floor(brocaAvail)} BROCA</span>
                 `;
             }
             
@@ -1136,7 +1146,7 @@ async function refreshSPKBalance() {
             await updateRewardsInfo();
             
             // Calculate USD value (placeholder prices)
-            const totalValue = (balances.spk || 0) * 0.01 + (balances.larynx || 0) * 0.001;
+            const totalValue = spk * 0.01 + larynxLiquid * 0.001;
             const totalUsd = document.getElementById('total-usd-value');
             if (totalUsd) {
                 totalUsd.textContent = `$${totalValue.toFixed(2)}`;
@@ -1385,7 +1395,7 @@ async function sendToken(tokenType) {
     
     currentTokenForModal = tokenType;
     document.getElementById('send-token-type').textContent = tokenType;
-    document.getElementById('send-modal').style.display = 'block';
+    document.getElementById('send-modal').style.display = 'flex';
     
     // Clear form
     document.getElementById('send-form').reset();
@@ -1480,27 +1490,74 @@ function showNotification(message, type = 'info', duration = 5000) {
 
 // Form handlers
 document.addEventListener('DOMContentLoaded', () => {
-    // Send form handler
+    // Send form handler (routes to Hive or SPK based on token)
     const sendForm = document.getElementById('send-form');
     sendForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const submitBtn = document.getElementById('send-submit');
+        submitBtn?.setAttribute('disabled', 'true');
         
-        const recipient = document.getElementById('send-to').value;
+        const recipient = document.getElementById('send-to').value.trim();
         const amount = parseFloat(document.getElementById('send-amount').value);
         const memo = document.getElementById('send-memo').value || '';
         
         try {
-            const result = await window.api.token.transfer(recipient, amount, currentTokenForModal, memo);
-            if (result.success) {
+            let result;
+            if (currentTokenForModal === 'HIVE' || currentTokenForModal === 'HBD') {
+                result = await window.api.hive.transfer(recipient, amount, currentTokenForModal, memo);
+            } else {
+                result = await window.api.token.transfer(recipient, amount, currentTokenForModal, memo);
+            }
+            if (result && result.success) {
                 showNotification(`Successfully sent ${amount} ${currentTokenForModal} to ${recipient}`, 'success');
                 closeSendModal();
                 refreshAllBalances();
             } else {
-                showNotification(`Transfer failed: ${result.error}`, 'error');
+                showNotification(`Transfer failed: ${result?.error || 'Unknown error'}`, 'error');
             }
         } catch (error) {
             showNotification(`Transfer failed: ${error.message}`, 'error');
+        } finally {
+            submitBtn?.removeAttribute('disabled');
         }
+    });
+
+    // Validate recipient Hive account and show avatar; enable submit when valid
+    const toInput = document.getElementById('send-to');
+    const statusEl = document.getElementById('send-account-status');
+    const avatarEl = document.getElementById('send-avatar');
+    const submitBtn = document.getElementById('send-submit');
+    let validateTimer;
+    const setValidState = (valid, username) => {
+        if (valid) {
+            statusEl && (statusEl.textContent = `@${username} found`);
+            if (avatarEl) {
+                avatarEl.src = `https://images.hive.blog/u/${username}/avatar`;
+                avatarEl.style.display = 'inline-block';
+            }
+            submitBtn && submitBtn.removeAttribute('disabled');
+        } else {
+            statusEl && (statusEl.textContent = username ? `@${username} not found` : '');
+            if (avatarEl) {
+                avatarEl.src = '';
+                avatarEl.style.display = 'none';
+            }
+            submitBtn && submitBtn.setAttribute('disabled', 'true');
+        }
+    };
+    const validateAccount = async (username) => {
+        try {
+            const res = await window.api.hive.getAccount(username);
+            setValidState(res && res.success && res.exists, username);
+        } catch (_) {
+            setValidState(false, username);
+        }
+    };
+    toInput?.addEventListener('input', () => {
+        const v = toInput.value.trim().toLowerCase();
+        clearTimeout(validateTimer);
+        if (!v || v.length < 3) return setValidState(false, v);
+        validateTimer = setTimeout(() => validateAccount(v), 300);
     });
 
     // Power up form handler
@@ -1521,6 +1578,68 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             showNotification(`Power up failed: ${error.message}`, 'error');
+        }
+    });
+
+    // Hive Power Up form handler
+    const hivePowerupForm = document.getElementById('hive-powerup-form');
+    hivePowerupForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+            const amount = parseFloat(document.getElementById('hive-powerup-amount').value);
+            if (!amount || amount <= 0) return showNotification('Enter a valid HIVE amount', 'warning');
+            const res = await window.api.invoke('hive:powerUp', { amount });
+            if (res && res.success) {
+                showNotification('Power up submitted', 'success');
+                closeHivePowerUpModal();
+                await refreshHiveBalance();
+            } else {
+                showNotification(res?.error || 'Power up failed', 'error');
+            }
+        } catch (e) {
+            showNotification(e.message || 'Power up failed', 'error');
+        }
+    });
+
+    // Convert to HBD form handler
+    const convertHBDForm = document.getElementById('convert-hbd-form');
+    convertHBDForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+            const amount = parseFloat(document.getElementById('convert-hbd-amount').value);
+            if (!amount || amount <= 0) return showNotification('Enter a valid HIVE amount', 'warning');
+            const res = await window.api.invoke('hive:convertToHBD', { amount });
+            if (res && res.success) {
+                showNotification('Conversion submitted', 'success');
+                closeConvertHBDModal();
+                await refreshHiveBalance();
+            } else {
+                showNotification(res?.error || 'Conversion failed', 'error');
+            }
+        } catch (e) {
+            showNotification(e.message || 'Conversion failed', 'error');
+        }
+    });
+
+    // Transfer to Savings form handler
+    const savingsForm = document.getElementById('savings-form');
+    savingsForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+            const amount = parseFloat(document.getElementById('savings-amount').value);
+            const memo = document.getElementById('savings-memo').value || '';
+            const asset = document.getElementById('savings-asset').value;
+            if (!amount || amount <= 0) return showNotification('Enter a valid amount', 'warning');
+            const res = await window.api.invoke('hive:transferToSavings', { amount, asset, memo });
+            if (res && res.success) {
+                showNotification('Transfer to savings submitted', 'success');
+                closeSavingsModal();
+                await refreshHiveBalance();
+            } else {
+                showNotification(res?.error || 'Savings transfer failed', 'error');
+            }
+        } catch (e) {
+            showNotification(e.message || 'Savings transfer failed', 'error');
         }
     });
 
@@ -1577,7 +1696,7 @@ async function powerUpLarynx() {
     const available = result.success ? (result.balances.larynx || 0).toFixed(3) : '--';
     
     document.getElementById('powerup-available').textContent = available;
-    document.getElementById('powerup-modal').style.display = 'block';
+    document.getElementById('powerup-modal').style.display = 'flex';
     document.getElementById('powerup-form').reset();
 }
 
@@ -1596,7 +1715,7 @@ async function powerDownLarynx() {
     const available = result.success ? (result.balances.larynxPower || 0).toFixed(3) : '--';
     
     document.getElementById('powerdown-available').textContent = available;
-    document.getElementById('powerdown-modal').style.display = 'block';
+    document.getElementById('powerdown-modal').style.display = 'flex';
     document.getElementById('powerdown-form').reset();
 }
 
@@ -1615,7 +1734,7 @@ async function delegateLarynx() {
     const available = result.success ? (result.balances.larynxPower || 0).toFixed(3) : '--';
     
     document.getElementById('delegate-available').textContent = available;
-    document.getElementById('delegate-modal').style.display = 'block';
+    document.getElementById('delegate-modal').style.display = 'flex';
     document.getElementById('delegate-form').reset();
 }
 
@@ -1647,55 +1766,26 @@ async function claimRewards() {
 }
 
 // Hive operations
-async function powerUpHive() {
-    try {
-        const amount = parseFloat(document.getElementById('hive-powerup-amount')?.value || '0');
-        if (!amount || amount <= 0) return showNotification('Enter a valid HIVE amount', 'warning');
-        const res = await window.api.invoke('hive:powerUp', { amount });
-        if (res && res.success) {
-            showNotification('Power up submitted', 'success');
-            await refreshHiveBalance();
-        } else {
-            showNotification(res?.error || 'Power up failed', 'error');
-        }
-    } catch (e) {
-        showNotification(e.message || 'Power up failed', 'error');
-    }
+function openHivePowerUpModal() {
+    document.getElementById('hive-powerup-form')?.reset();
+    document.getElementById('hive-powerup-modal').style.display = 'flex';
 }
+function closeHivePowerUpModal() { document.getElementById('hive-powerup-modal').style.display = 'none'; }
 
-async function convertToHBD() {
-    try {
-        const amount = parseFloat(document.getElementById('convert-hbd-amount')?.value || '0');
-        if (!amount || amount <= 0) return showNotification('Enter a valid HIVE amount', 'warning');
-        const res = await window.api.invoke('hive:convertToHBD', { amount });
-        if (res && res.success) {
-            showNotification('Conversion submitted', 'success');
-            await refreshHiveBalance();
-        } else {
-            showNotification(res?.error || 'Conversion failed', 'error');
-        }
-    } catch (e) {
-        showNotification(e.message || 'Conversion failed', 'error');
-    }
+function openConvertHBDModal() {
+    document.getElementById('convert-hbd-form')?.reset();
+    document.getElementById('convert-hbd-modal').style.display = 'flex';
 }
+function closeConvertHBDModal() { document.getElementById('convert-hbd-modal').style.display = 'none'; }
 
-async function transferToSavings(token) {
-    try {
-        const amount = parseFloat(document.getElementById('savings-amount')?.value || '0');
-        const memo = document.getElementById('savings-memo')?.value || '';
-        const asset = token === 'HBD' ? 'HBD' : 'HIVE';
-        if (!amount || amount <= 0) return showNotification('Enter a valid amount', 'warning');
-        const res = await window.api.invoke('hive:transferToSavings', { amount, asset, memo });
-        if (res && res.success) {
-            showNotification('Transfer to savings submitted', 'success');
-            await refreshHiveBalance();
-        } else {
-            showNotification(res?.error || 'Savings transfer failed', 'error');
-        }
-    } catch (e) {
-        showNotification(e.message || 'Savings transfer failed', 'error');
-    }
+function openTransferToSavingsModal(defaultAsset) {
+    const assetSelect = document.getElementById('savings-asset');
+    if (assetSelect && (defaultAsset === 'HIVE' || defaultAsset === 'HBD')) assetSelect.value = defaultAsset;
+    document.getElementById('savings-form')?.reset();
+    if (assetSelect && (defaultAsset === 'HIVE' || defaultAsset === 'HBD')) assetSelect.value = defaultAsset;
+    document.getElementById('savings-modal').style.display = 'flex';
 }
+function closeSavingsModal() { document.getElementById('savings-modal').style.display = 'none'; }
 
 async function delegateHP() {
     try {
@@ -1791,24 +1881,23 @@ async function updateDelegationInfo() {
 }
 
 async function updateRewardsInfo() {
-    // TODO: Fetch actual rewards data from SPK API
     try {
-        // Placeholder data - replace with actual API calls
-        const pendingRewards = 0;
-        
+        const result = await window.api.balance.get(false);
+        if (!result || !result.success) return;
+        const b = result.balances;
+        const scale = 1000;
+        const pending = Number(b.LARYNX?.pendingRewards ?? 0) / scale;
         const rewardsEl = document.getElementById('pending-rewards');
-        if (rewardsEl) {
-            rewardsEl.textContent = pendingRewards.toFixed(3);
-        }
-        
-        // Update Hive pending rewards if on Hive tab
+        if (rewardsEl) rewardsEl.textContent = pending.toFixed(3);
+        const claimBtn = document.querySelector('#spk-wallet-tab .rewards-card button.btn.btn-primary');
+        if (claimBtn) claimBtn.disabled = pending <= 0;
+        // Hive side placeholders remain 0
         const pendingHbd = document.getElementById('pending-hbd');
         const pendingHive = document.getElementById('pending-hive');
         const pendingHp = document.getElementById('pending-hp');
-        
-        if (pendingHbd) pendingHbd.textContent = '0.000';
-        if (pendingHive) pendingHive.textContent = '0.000';
-        if (pendingHp) pendingHp.textContent = '0.000';
+        if (pendingHbd) pendingHbd.textContent = (Number(b.HIVE?.pendingHBD ?? 0)).toFixed(3);
+        if (pendingHive) pendingHive.textContent = (Number(b.HIVE?.pendingHIVE ?? 0)).toFixed(3);
+        if (pendingHp) pendingHp.textContent = (Number(b.HIVE?.pendingHP ?? 0)).toFixed(3);
     } catch (error) {
         console.error('Failed to update rewards info:', error);
     }

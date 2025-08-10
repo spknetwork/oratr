@@ -667,11 +667,15 @@ function setupIPCHandlers() {
     return `${vests.toFixed(6)} VESTS`;
   }
 
+  async function getActiveUsername() {
+    const active = await services.spkClient.getActiveAccount();
+    if (!active) throw new Error('No active account');
+    return typeof active === 'string' ? active : active.username;
+  }
+
   ipcMain.handle('hive:transfer', async (event, { to, amount, asset, memo = '' }) => {
     try {
-      const active = await services.spkClient.getActiveAccount();
-      if (!active || !active.username) throw new Error('No active account');
-      const from = active.username;
+      const from = await getActiveUsername();
       const op = ['transfer', { from, to, amount: formatAssetAmount(amount, asset || 'HIVE'), memo }];
       const tx = { operations: [op] };
       const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
@@ -683,9 +687,7 @@ function setupIPCHandlers() {
 
   ipcMain.handle('hive:powerUp', async (event, { to = null, amount }) => {
     try {
-      const active = await services.spkClient.getActiveAccount();
-      if (!active || !active.username) throw new Error('No active account');
-      const from = active.username;
+      const from = await getActiveUsername();
       const op = ['transfer_to_vesting', { from, to: to || from, amount: formatAssetAmount(amount, 'HIVE') }];
       const tx = { operations: [op] };
       const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
@@ -697,9 +699,7 @@ function setupIPCHandlers() {
 
   ipcMain.handle('hive:powerDown', async (event, { hpAmount }) => {
     try {
-      const active = await services.spkClient.getActiveAccount();
-      if (!active || !active.username) throw new Error('No active account');
-      const account = active.username;
+      const account = await getActiveUsername();
       const vesting_shares = await hpToVests(hpAmount);
       const op = ['withdraw_vesting', { account, vesting_shares }];
       const tx = { operations: [op] };
@@ -712,9 +712,7 @@ function setupIPCHandlers() {
 
   ipcMain.handle('hive:delegateHP', async (event, { delegatee, hpAmount }) => {
     try {
-      const active = await services.spkClient.getActiveAccount();
-      if (!active || !active.username) throw new Error('No active account');
-      const delegator = active.username;
+      const delegator = await getActiveUsername();
       const vesting_shares = await hpToVests(hpAmount);
       const op = ['delegate_vesting_shares', { delegator, delegatee, vesting_shares }];
       const tx = { operations: [op] };
@@ -727,9 +725,7 @@ function setupIPCHandlers() {
 
   ipcMain.handle('hive:claimRewards', async () => {
     try {
-      const active = await services.spkClient.getActiveAccount();
-      if (!active || !active.username) throw new Error('No active account');
-      const account = active.username;
+      const account = await getActiveUsername();
       // Fetch current pending rewards
       const accounts = await hiveClient.database.getAccounts([account]);
       const a = accounts[0];
@@ -769,6 +765,18 @@ function setupIPCHandlers() {
       const tx = { operations: [op] };
       const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
       return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Hive account lookup
+  ipcMain.handle('hive:getAccount', async (event, { username }) => {
+    try {
+      if (!username || typeof username !== 'string') throw new Error('Invalid username');
+      const accs = await hiveClient.database.getAccounts([username]);
+      const account = accs && accs[0] && accs[0].name ? accs[0] : null;
+      return { success: true, exists: !!account, account };
     } catch (error) {
       return { success: false, error: error.message };
     }
