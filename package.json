@@ -1,6 +1,6 @@
 {
   "name": "oratr",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Oratr - SPK Network Desktop Application for Video transcoding, IPFS storage, and ProofOfAccess node",
   "main": "src/main/index.js",
   "scripts": {

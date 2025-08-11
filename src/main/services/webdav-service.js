@@ -230,6 +230,7 @@ class WebDavService {
           // Fall through
         }
       }
+      }
       return next();
     });
 
