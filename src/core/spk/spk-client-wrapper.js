@@ -288,22 +288,22 @@ class SPKClientWrapper extends EventEmitter {
   /**
    * Calculate BROCA cost using spk-js
    */
-  async calculateBrocaCost(files, duration = 30) {
+  async calculateBrocaCost(filesOrSize, duration = 30) {
     try {
       const spk = await this.getSpkInstance(this.currentUser || 'guest');
-      
-      // Handle both single file and array of files
-      const fileArray = Array.isArray(files) ? files : [files];
-      
-      // Calculate total size
-      const totalSize = fileArray.reduce((sum, file) => {
-        return sum + (file.size || file.fileSize || 0);
-      }, 0);
-      
-      // Use BrocaCalculator from spk-js
+
+      // Support both a numeric size and a file/files input
+      let totalSize = 0;
+      if (typeof filesOrSize === 'number') {
+        totalSize = Math.max(0, Number(filesOrSize) || 0);
+      } else {
+        const fileArray = Array.isArray(filesOrSize) ? filesOrSize : [filesOrSize];
+        totalSize = fileArray.reduce((sum, file) => sum + (file?.size || file?.fileSize || 0), 0);
+      }
+
       const { BrocaCalculator } = require('@disregardfiat/spk-js');
       const cost = BrocaCalculator.cost(totalSize, duration);
-      
+
       return {
         broca: cost,
         totalSize,
@@ -311,13 +311,14 @@ class SPKClientWrapper extends EventEmitter {
       };
     } catch (error) {
       logger.error('Failed to calculate BROCA cost:', error);
-      // Return fallback calculation
-      const totalSize = Array.isArray(files) ? 
-        files.reduce((sum, file) => sum + (file.size || file.fileSize || 0), 0) : 
-        (files.size || files.fileSize || 0);
-      
+      const totalSize = typeof filesOrSize === 'number'
+        ? Math.max(0, Number(filesOrSize) || 0)
+        : (Array.isArray(filesOrSize)
+            ? filesOrSize.reduce((sum, file) => sum + (file?.size || file?.fileSize || 0), 0)
+            : (filesOrSize?.size || filesOrSize?.fileSize || 0));
+
       return {
-        broca: Math.ceil(totalSize * duration * 0.001), // Fallback calculation
+        broca: Math.ceil(totalSize * duration * 0.001),
         totalSize,
         duration
       };

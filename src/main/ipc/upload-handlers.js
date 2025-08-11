@@ -393,7 +393,19 @@ function setupUploadHandlers() {
       directUploadService.on('progress', progressHandler);
 
       try {
-        const uploadResult = await directUploadService.directUpload(files, options);
+        // Normalize incoming files: convert Array<number> buffers to Node Buffers
+        const normalized = (files || []).map((f) => ({
+          name: f.name,
+          size: Number(f.size) || (Array.isArray(f.buffer) ? f.buffer.length : (f.buffer?.length || 0)),
+          type: f.type || 'application/octet-stream',
+          buffer: Buffer.isBuffer(f.buffer)
+            ? f.buffer
+            : (Array.isArray(f.buffer)
+                ? Buffer.from(f.buffer)
+                : (f.buffer instanceof Uint8Array ? Buffer.from(f.buffer) : Buffer.alloc(0)))
+        }));
+
+        const uploadResult = await directUploadService.directUpload(normalized, options || {});
         
         directUploadService.removeListener('progress', progressHandler);
         

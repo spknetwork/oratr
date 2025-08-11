@@ -42,4 +42,26 @@ Clients that do not understand the custom property will ignore it.
 - Thumbnails are treated as hidden files in Honeygraph (bitflag 2) and are not listed as regular files. Only the `thumbnail` field is used to render icons.
 - The server proxies thumbnails through `ipfs.dlux.io` and sets `Cache-Control: public, max-age=86400`.
 
+### Uploading files (PUT) and creating folders (MKCOL)
+
+- Drag and drop into a mounted WebDAV folder is supported. Files are published to IPFS unencrypted via a direct upload, after a confirmation prompt in the app.
+- You can also use standard WebDAV clients or curl to upload:
+
+  Upload a file (will publish to IPFS):
+
+  ```bash
+  curl -T ./local-file.jpg http://127.0.0.1:4819/<username>/Photos/local-file.jpg
+  ```
+
+  Create a folder path (no-op on-chain, for organization only):
+
+  ```bash
+  curl -X MKCOL http://127.0.0.1:4819/<username>/Photos/
+  ```
+
+  Notes:
+  - On first upload, Oratr will ask for confirmation to publish to IPFS (unencrypted).
+  - The file is added to the local IPFS node and a direct upload transaction is broadcast with basic metadata.
+  - A successful upload responds with 201 Created and includes an ETag header with the new CID.
+
 

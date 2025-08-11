@@ -31,7 +31,7 @@ class WebDavService {
       requireAuthentification: false
     });
 
-    // Directory and file handlers (read-only) + optional Basic auth
+    // Directory and file handlers with optional Basic auth
     server.beforeRequest(async (ctx, next) => {
       const method = ctx.request.method || '';
       // Optional Basic auth
@@ -64,6 +64,29 @@ class WebDavService {
           ctx.response.setHeader('MS-Author-Via', 'DAV');
         }
       }
+      // Confirmation helper for mutating methods
+      const confirmPublish = async () => {
+        try {
+          // Ask renderer to confirm publishing to IPFS (unencrypted)
+          if (this.services?.spkClient?.mainWindow) {
+            const { webContents } = this.services.spkClient.mainWindow;
+            const requestId = `webdav-confirm-${Date.now()}-${Math.random()}`;
+            return await new Promise((resolve) => {
+              const replyChannel = 'webdav:confirm-reply:' + requestId;
+              const timeout = setTimeout(() => resolve(true), 5000); // default allow after 5s
+              const listener = (_e, approved) => {
+                try { webContents.removeAllListeners(replyChannel); } catch (_) {}
+                clearTimeout(timeout);
+                resolve(Boolean(approved));
+              };
+              webContents.once(replyChannel, listener);
+              webContents.send('webdav:confirm', { requestId });
+            });
+          }
+        } catch (_) {}
+        return true;
+      };
+
       // Handle PROPFIND for directory listings
       if (method === 'PROPFIND' || method === 'HEAD') {
         try {
@@ -104,8 +127,91 @@ class WebDavService {
         }
       }
 
-      // Only intercept GET for file proxying
-      if (method === 'GET' && !ctx.requested.path.isRoot()) {
+      // Intercept GET for file proxying; PUT/MKCOL to upload via direct upload
+      if (!ctx.requested.path.isRoot()) {
+        // PUT: upload/replace file into current path (publish to IPFS)
+        if (method === 'PUT') {
+          try {
+            const ok = await confirmPublish();
+            if (!ok) {
+              ctx.setCode(webdav.HTTPCodes.Forbidden);
+              return ctx.response.end('Upload cancelled');
+            }
+            const parts = ctx.requested.path.paths;
+            const username = parts[0];
+            const subPath = parts.slice(1).join('/');
+            if (!username || !subPath) {
+              ctx.setCode(webdav.HTTPCodes.BadRequest);
+              return ctx.response.end('Bad path');
+            }
+            // Read request body into buffer
+            const chunks = [];
+            await new Promise((resolve, reject) => {
+              ctx.request.on('data', (d) => chunks.push(Buffer.from(d)));
+              ctx.request.on('end', resolve);
+              ctx.request.on('error', reject);
+            });
+            const buffer = Buffer.concat(chunks);
+            const filename = decodeURIComponent(subPath.split('/').pop() || 'upload');
+
+            // Ensure active account
+            const spkWrapper = this.services?.spkClient;
+            const active = spkWrapper?.getActiveAccount?.();
+            if (!active || (typeof active === 'object' && !active.username)) {
+              ctx.setCode(webdav.HTTPCodes.Forbidden);
+              return ctx.response.end('No active account');
+            }
+            // Use direct simple upload pipeline from main process services
+            // Convert to expected format
+            const uploadSvc = this.services?.directUploadService;
+            if (!uploadSvc) {
+              ctx.setCode(webdav.HTTPCodes.InternalServerError);
+              return ctx.response.end('Upload service unavailable');
+            }
+
+            // Ensure spk client on upload service
+            if (!uploadSvc.spkClient) {
+              const SPK = require('@disregardfiat/spk-js');
+              const SPKKeychainAdapter = require('../../core/spk/keychain-adapter');
+              const keychainAdapter = new SPKKeychainAdapter(this.services.spkClient.accountManager);
+              const spk = new SPK(typeof active === 'string' ? active : active.username, { keychain: keychainAdapter });
+              try { await spk.init(); } catch (_) {}
+              uploadSvc.spkClient = spk;
+            }
+
+            const result = await uploadSvc.directUpload([
+              { name: filename, size: buffer.length, type: 'application/octet-stream', buffer }
+            ], { metadata: { folder: subPath.split('/').slice(0, -1).join('/') } });
+
+            const first = Array.isArray(result?.files) ? result.files[0] : result;
+            if (!first?.cid) throw new Error('No CID returned');
+
+            ctx.setCode(webdav.HTTPCodes.Created);
+            ctx.response.setHeader('ETag', '"' + first.cid + '"');
+            return ctx.response.end();
+          } catch (e) {
+            ctx.setCode(webdav.HTTPCodes.InternalServerError);
+            return ctx.response.end('Upload failed');
+          }
+        }
+
+        // MKCOL: ensure virtual folder exists (no-op against Honeygraph; return Created)
+        if (method === 'MKCOL') {
+          try {
+            const ok = await confirmPublish();
+            if (!ok) {
+              ctx.setCode(webdav.HTTPCodes.Forbidden);
+              return ctx.response.end('Cancelled');
+            }
+            ctx.setCode(webdav.HTTPCodes.Created);
+            return ctx.response.end();
+          } catch (_) {
+            ctx.setCode(webdav.HTTPCodes.Created);
+            return ctx.response.end();
+          }
+        }
+
+        if (method === 'GET') {
         try {
           const pathParts = ctx.requested.path.paths;
           // path: /<username>/<optional path>

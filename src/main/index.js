@@ -1532,9 +1532,10 @@ function setupIPCHandlers() {
     }
   });
 
-  ipcMain.handle('spk:calculateBrocaCost', async (event, sizeInBytes, options) => {
+  ipcMain.handle('spk:calculateBrocaCost', async (event, sizeOrFiles, options = {}) => {
     try {
-      const data = await services.spkClient.calculateBrocaCost(sizeInBytes, options);
+      const duration = Number(options.duration) || 30;
+      const data = await services.spkClient.calculateBrocaCost(sizeOrFiles, duration);
       return { success: true, data };
     } catch (error) {
       return { success: false, error: error.message };

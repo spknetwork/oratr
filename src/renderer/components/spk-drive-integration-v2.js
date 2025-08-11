@@ -1068,9 +1068,22 @@ async function uploadFiles(files, folder) {
         let totalSize = 0;
         fileArray.forEach(file => totalSize += file.size);
         
-        const storageCost = await spkInstance.calculateStorageCost(totalSize, 30);
-        if (!storageCost.canAfford) {
-            showNotification(`Insufficient BROCA. Need ${storageCost.broca}, have ${storageCost.currentBroca}`, 'error');
+        // Calculate BROCA cost via main process for accurate current rules
+        const brocaCalc = await window.api.invoke('spk:calculateBrocaCost', totalSize, { duration: 30 });
+        if (!brocaCalc?.success) {
+            showNotification('Failed to calculate BROCA cost: ' + (brocaCalc?.error || 'Unknown error'), 'error');
+            hideUploadProgress();
+            return;
+        }
+        const requiredBroca = brocaCalc.data?.broca ?? brocaCalc.data?.cost ?? 0;
+        // Fetch current BROCA balance
+        let availableBroca = 0;
+        try {
+            const bal = await window.api.balance.get(false);
+            availableBroca = parseFloat(bal?.broca || 0);
+        } catch (_) {}
+        if (availableBroca < requiredBroca) {
+            showNotification(`Insufficient BROCA. Need ${Math.ceil(requiredBroca)}, have ${Math.floor(availableBroca)}`, 'error');
             hideUploadProgress();
             return;
         }
@@ -1109,12 +1122,14 @@ async function uploadFiles(files, folder) {
                 updateUploadProgress(tracker.itemId, 30, 'Uploading...');
                 
                 // Upload using spk-js
-                const result = await spkInstance.upload(tracker.file, {
-                    metadata,
-                    onProgress: (progress) => {
-                        updateUploadProgress(tracker.itemId, 30 + (progress * 0.6), `Uploading ${Math.round(progress * 100)}%`);
-                    }
+                // Prefer streamlined direct upload through main process for consistency
+                const arrayBuffer = await tracker.file.arrayBuffer();
+                const resp = await window.api.invoke('upload:direct-simple', {
+                    files: [{ name: tracker.file.name, size: tracker.file.size, buffer: Array.from(new Uint8Array(arrayBuffer)) }],
+                    options: { metadata }
                 });
+                if (!resp?.success) throw new Error(resp?.error || 'Upload failed');
+                const result = Array.isArray(resp.data?.files) ? resp.data.files[0] : resp.data?.files || resp.data;
                 
                 updateUploadProgress(tracker.itemId, 90, 'Creating contract...');
                 

@@ -809,6 +809,20 @@ window.api.on('storage:auto-start-pending', () => {
     }
 });
 
+// WebDAV upload confirmation popup (global, available early)
+window.api.on('webdav:confirm', ({ requestId }) => {
+    try {
+        const approved = confirm('This will publish the dropped file to IPFS (unencrypted). Continue?');
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('webdav:confirm-reply:' + requestId, approved);
+    } catch (_) {
+        try {
+            const { ipcRenderer } = require('electron');
+            ipcRenderer.send('webdav:confirm-reply:' + requestId, true);
+        } catch (_) {}
+    }
+});
+
 // Handle storage node auto-starting
 window.api.on('storage:auto-starting', (data) => {
     console.log('[RENDERER] Storage node auto-starting:', data);
