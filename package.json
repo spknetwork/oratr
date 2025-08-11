@@ -1,10 +1,10 @@
 {
   "name": "oratr",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Oratr - SPK Network Desktop Application for Video transcoding, IPFS storage, and ProofOfAccess node",
   "main": "src/main/index.js",
   "scripts": {
-    "start": "electron . --no-sandbox --remote-debugging-port=9222",
+    "start": "node -e \"require('./scripts/install-ffmpeg');\" && electron . --no-sandbox --remote-debugging-port=9222",
     "dev": "npm run test:watch",
     "test": "cross-env NODE_OPTIONS=\"--experimental-vm-modules\" jest",
     "test:watch": "cross-env NODE_OPTIONS=\"--experimental-vm-modules\" jest --watch",

@@ -2362,7 +2362,15 @@ app.whenReady().then(async () => {
     
   } catch (error) {
     console.error('Failed to initialize app:', error);
-    app.quit();
+    try {
+      // Show the window with Docs so user sees guidance even if FFmpeg missing
+      if (!mainWindow) createWindow();
+      if (mainWindow && mainWindow.webContents && mainWindow.webContents.send) {
+        mainWindow.webContents.once('did-finish-load', () => {
+          try { mainWindow.webContents.send('app:init-error', { message: String(error?.message || error) }); } catch (_) {}
+        });
+      }
+    } catch (_) {}
   }
 });
 
@@ -2388,15 +2396,15 @@ app.on('activate', () => {
 
 app.on('before-quit', async () => {
   // Save storage node state before quitting
-  await saveStorageNodeState();
+  try { await saveStorageNodeState(); } catch (_) {}
   
   // Lock accounts on quit
-  services.spkClient.lock();
+  try { services.spkClient.lock(); } catch (_) {}
   
-  // Cleanup services
-  await services.ipfsManager.stop();
-  await services.storageNode.stop();
-  await services.transcoder.cleanup();
+  // Cleanup services (best-effort)
+  try { await services.ipfsManager?.stop?.(); } catch (_) {}
+  try { await services.storageNode?.stop?.(); } catch (_) {}
+  try { await services.transcoder?.cleanup?.(); } catch (_) {}
 });
 
 // Export for testing

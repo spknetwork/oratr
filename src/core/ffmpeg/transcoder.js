@@ -17,7 +17,7 @@ class Transcoder extends EventEmitter {
     // Initialize binary manager
     this.binaryManager = new FFmpegBinaryManager();
     
-    // Resolve ffmpeg/ffprobe paths in order: config → bundled binaries → packaged bin → system PATH
+    // Resolve ffmpeg/ffprobe paths. If not found yet, leave null; we'll try to install lazily in initialize().
     this.ffmpegPath = config.ffmpegPath || this.resolveBinaryPath('ffmpeg');
     this.ffprobePath = config.ffprobePath || this.resolveBinaryPath('ffprobe');
     this.tempDir = config.tempDir || path.join(os.tmpdir(), 'spk-transcode');
@@ -59,7 +59,8 @@ class Transcoder extends EventEmitter {
     try {
       return which.sync(binaryName);
     } catch {
-      throw new Error(`${binaryName} not found. Please run 'npm run install-ffmpeg' or install FFmpeg manually.`);
+      // Return null to allow lazy installation during initialize()
+      return null;
     }
   }
 

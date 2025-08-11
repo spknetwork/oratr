@@ -208,10 +208,13 @@ class FFmpegBinaryManager {
   /**
    * Install FFmpeg binaries
    */
-  async install() {
+  async install(autoDownload = true) {
     if (this.isInstalled()) {
       console.log('FFmpeg binaries already installed');
       return { ffmpegPath: this.ffmpegPath, ffprobePath: this.ffprobePath };
+    }
+    if (!autoDownload) {
+      throw new Error('FFmpeg not installed');
     }
 
     console.log(`Installing FFmpeg for ${this.platform}-${this.arch}...`);
