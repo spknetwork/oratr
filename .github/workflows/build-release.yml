@@ -81,15 +81,15 @@ jobs:
       
       - name: Zip Windows installer to preserve .exe extension on download
         if: matrix.os == 'windows-latest'
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          mkdir -p dist/zipped
-          for f in dist/*.exe; do
-            base=$(basename "$f")
-            zip -j "dist/zipped/${base}.zip" "$f"
-          done
-          ls -la dist/zipped
+          New-Item -ItemType Directory -Force -Path "dist\zipped" | Out-Null
+          Get-ChildItem -Path dist -Filter *.exe | ForEach-Object {
+            $exe = $_.FullName
+            $zip = Join-Path "dist\zipped" ("$($_.Name).zip")
+            Compress-Archive -Path $exe -DestinationPath $zip -Force
+          }
+          Get-ChildItem -Path "dist\zipped" | Format-Table -AutoSize
       
       - name: Upload Zipped Windows installers
         if: matrix.os == 'windows-latest'
