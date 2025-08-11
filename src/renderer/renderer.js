@@ -4406,20 +4406,23 @@ async function checkDirectUploadAvailability() {
 async function updateVideoUploadOptions(videoInfo, brocaCost) {
     const optionsContainer = document.getElementById('upload-options');
     const height = videoInfo.height || 1080;
+    const width = videoInfo.width || 1920;
     
-    // Define available resolutions
+    // Define available resolutions with both width and height
     const resolutions = [
-        { name: '2160p (4K)', value: '2160p', height: 2160 },
-        { name: '1440p', value: '1440p', height: 1440 },
-        { name: '1080p (Full HD)', value: '1080p', height: 1080 },
-        { name: '720p (HD)', value: '720p', height: 720 },
-        { name: '480p', value: '480p', height: 480 },
-        { name: '360p', value: '360p', height: 360 },
-        { name: '240p', value: '240p', height: 240 }
+        { name: '2160p (4K)', value: '2160p', width: 3840, height: 2160 },
+        { name: '1440p', value: '1440p', width: 2560, height: 1440 },
+        { name: '1080p (Full HD)', value: '1080p', width: 1920, height: 1080 },
+        { name: '720p (HD)', value: '720p', width: 1280, height: 720 },
+        { name: '480p', value: '480p', width: 854, height: 480 },
+        { name: '360p', value: '360p', width: 640, height: 360 },
+        { name: '240p', value: '240p', width: 426, height: 240 }
     ];
     
-    // Filter resolutions that are lower than or equal to source
-    const availableResolutions = resolutions.filter(res => res.height <= height);
+    // Filter resolutions - check if either width OR height meets the standard (to support widescreen videos)
+    const availableResolutions = resolutions.filter(res => 
+        res.width <= width || res.height <= height
+    );
     
     // If source is already low res, add at least one option
     if (availableResolutions.length === 0) {

@@ -67,6 +67,47 @@ describe.skip('Transcoder', () => {
       expect(resolutions).not.toContain('720p');
       expect(resolutions).toContain('480p');
     });
+
+    test('should detect widescreen 720p video correctly', async () => {
+      const metadata = {
+        width: 1280,
+        height: 544, // Widescreen 21:9 aspect ratio
+        bitrate: 2500000
+      };
+      
+      const resolutions = transcoder.determineOutputResolutions(metadata);
+      expect(resolutions).toContain('720p'); // Should detect as 720p capable
+      expect(resolutions).toContain('480p');
+      expect(resolutions).toContain('360p');
+      expect(resolutions).not.toContain('1080p'); // Should not upscale to 1080p
+    });
+
+    test('should detect ultra-wide 1080p video correctly', async () => {
+      const metadata = {
+        width: 2560,
+        height: 1080, // Ultra-wide 21:9 aspect ratio
+        bitrate: 5000000
+      };
+      
+      const resolutions = transcoder.determineOutputResolutions(metadata);
+      expect(resolutions).toContain('1080p');
+      expect(resolutions).toContain('720p');
+      expect(resolutions).toContain('480p');
+      expect(resolutions).toContain('360p');
+    });
+
+    test('should handle vertical video correctly', async () => {
+      const metadata = {
+        width: 720,
+        height: 1280, // Vertical video (9:16 aspect ratio)
+        bitrate: 2500000
+      };
+      
+      const resolutions = transcoder.determineOutputResolutions(metadata);
+      expect(resolutions).toContain('720p'); // Height meets 720p standard
+      expect(resolutions).toContain('480p');
+      expect(resolutions).toContain('360p');
+    });
   });
 
   describe.skip('thumbnail generation', () => { // TODO: Need valid test video file

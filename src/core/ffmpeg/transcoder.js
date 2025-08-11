@@ -193,8 +193,9 @@ class Transcoder extends EventEmitter {
     ];
 
     // Only include resolutions that don't upscale
+    // Check if either width OR height meets the standard (to support widescreen videos)
     for (const standard of standards) {
-      if (width >= standard.width && height >= standard.height) {
+      if (width >= standard.width || height >= standard.height) {
         resolutions.push(standard.name);
       }
     }
