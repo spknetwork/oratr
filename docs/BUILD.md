@@ -99,6 +99,8 @@ npm run build:all
   - Intel: `proofofaccess-darwin-amd64`
   - Apple Silicon: `proofofaccess-darwin-arm64`
 - Requires macOS 10.13 or later
+- App bundle is not modified at runtime; FFmpeg/POA binaries are installed under `~/Library/Application Support/Oratr/bin`.
+- For distribution, enable signing and notarization (see below).
 
 ### Linux
 
@@ -151,6 +153,12 @@ For automated builds, ensure your CI/CD pipeline:
 2. Runs the prebuild script before building
 3. Has network access for downloading binaries
 4. Sets appropriate code signing certificates (for production releases)
+
+### macOS Signing and Notarization
+
+- Set secrets in CI: `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
+- Configure `electron-builder` mac options with `hardenedRuntime` and entitlements (added in `package.json`).
+- DMG and ZIP artifacts will be signed; notarization can be added with `ELECTRON_BUILDER_NOTARIZE=true` and corresponding env vars.
 
 ### GitHub Actions Example
 

@@ -100,6 +100,18 @@ npm run build:mac
 npm run build:linux
 ```
 
+## Installation Notes
+
+### macOS Gatekeeper
+
+- Runtime binaries (FFmpeg, ProofOfAccess) are stored under `~/Library/Application Support/Oratr/bin` to avoid modifying the app bundle after signing.
+- If macOS shows a message that the app is "damaged or modified", right-click the app and choose Open. For production releases, use the signed/notarized DMG.
+
+### Windows Installer Download
+
+- Some browsers strip the `.exe` extension. The release includes `Oratr-Windows.exe.zip` to preserve the extension.
+- Download and extract the `.exe`, then run the installer. A portable ZIP is also provided.
+
 ## Core Modules
 
 ### Video Transcoder

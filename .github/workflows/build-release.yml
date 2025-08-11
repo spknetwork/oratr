@@ -14,6 +14,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: false
+      # macOS signing/notarization (optional; provide secrets to enable)
+      # APPLE_ID: ${{ secrets.APPLE_ID }}
+      # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -74,6 +78,25 @@ jobs:
           path: |
             dist/*.exe
             dist/*-win.zip
+      
+      - name: Zip Windows installer to preserve .exe extension on download
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/zipped
+          for f in dist/*.exe; do
+            base=$(basename "$f")
+            zip -j "dist/zipped/${base}.zip" "$f"
+          done
+          ls -la dist/zipped
+      
+      - name: Upload Zipped Windows installers
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers-zipped
+          path: dist/zipped/*.zip
 
       - name: Upload macOS artifacts
         if: matrix.os == 'macos-latest'
@@ -83,6 +106,13 @@ jobs:
           path: |
             dist/*.dmg
             dist/*-mac.zip
+      
+      - name: Print macOS codesign status (diagnostic)
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "Listing app bundles in dist for signing info"
+          ls -la dist
+          find dist -name "*.app" -maxdepth 2 -print -exec codesign -dv --verbose=4 {} \; || true
 
   release:
     needs: build
@@ -175,11 +205,11 @@ jobs:
       - name: Find Windows Installer
         id: find_exe
         run: |
-          EXE=$(find windows-builds -name "*.exe" -type f | head -1)
+          EXE=$(find windows-installers-zipped -name "*.exe.zip" -type f | head -1)
           echo "exe_path=$EXE" >> $GITHUB_OUTPUT
           echo "Found EXE: $EXE"
 
-      - name: Upload Windows Installer
+      - name: Upload Windows Installer (zipped)
         if: steps.find_exe.outputs.exe_path != ''
         uses: actions/upload-release-asset@v1
         env:
@@ -187,8 +217,8 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_exe.outputs.exe_path }}
-          asset_name: Oratr-Windows.exe
-          asset_content_type: application/octet-stream
+          asset_name: Oratr-Windows.exe.zip
+          asset_content_type: application/zip
 
       - name: Find Windows Portable ZIP
         id: find_winzip
@@ -207,6 +237,9 @@ jobs:
           asset_path: ${{ steps.find_winzip.outputs.winzip_path }}
           asset_name: Oratr-Windows.zip
           asset_content_type: application/zip
+
+      - name: Note for users about Windows installer
+        run: echo "Windows installer is provided zipped as Oratr-Windows.exe.zip to prevent browsers from stripping .exe. Extract and run the .exe."
 
       - name: Find macOS DMG
         id: find_dmg

@@ -14,7 +14,17 @@ class FFmpegBinaryManager {
   constructor() {
     this.platform = os.platform();
     this.arch = os.arch();
-    this.binDir = path.join(__dirname, '../../../bin');
+    // Place binaries under user data dir to avoid modifying app bundle after signing
+    this.binDir = (() => {
+      try {
+        const electron = require('electron');
+        const app = electron?.app || electron?.remote?.app;
+        if (app && typeof app.getPath === 'function') {
+          return path.join(app.getPath('userData'), 'bin');
+        }
+      } catch (_) {}
+      return path.join(os.homedir(), '.oratr', 'bin');
+    })();
     this.ffmpegPath = path.join(this.binDir, this.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
     this.ffprobePath = path.join(this.binDir, this.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
   }

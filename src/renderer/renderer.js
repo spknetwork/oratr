@@ -286,13 +286,20 @@ window.addEventListener('DOMContentLoaded', async () => {
         });
         window.addEventListener('active-account-changed', () => updateLoginBtn());
     } catch (_) {}
-    // Wire titlebar buttons to hide to tray
+    // macOS: hide custom window controls to let native traffic lights show
     try {
-        const { ipcRenderer } = require('electron');
-        const btnClose = document.getElementById('btn-close');
-        const btnMin = document.getElementById('btn-minimize');
-        if (btnClose) btnClose.addEventListener('click', () => ipcRenderer.invoke('window:hide'));
-        if (btnMin) btnMin.addEventListener('click', () => ipcRenderer.invoke('window:minimize'));
+        const isMac = (typeof process !== 'undefined' && process.platform === 'darwin');
+        if (isMac) {
+            const tb = document.querySelector('.window-titlebar');
+            if (tb) tb.style.display = 'none';
+        } else {
+            // Wire custom titlebar buttons on non-mac platforms
+            const { ipcRenderer } = require('electron');
+            const btnClose = document.getElementById('btn-close');
+            const btnMin = document.getElementById('btn-minimize');
+            if (btnClose) btnClose.addEventListener('click', () => ipcRenderer.invoke('window:hide'));
+            if (btnMin) btnMin.addEventListener('click', () => ipcRenderer.invoke('window:minimize'));
+        }
     } catch (_) {}
 
     // Pre-auth navigation guard: block non-Docs tabs and show auth dialog
@@ -393,28 +400,36 @@ window.addEventListener('DOMContentLoaded', async () => {
         updateWalletLockStatus(false);
         refreshBalance();
         showNotification('Wallet unlocked', 'success');
-        
-        // Check if we have an active account, if not and we have accounts, set the first one as active
+
         try {
+            // If there are no accounts yet, keep the auth overlay open and show the Add Account flow
+            const accounts = await window.api.account.list();
+            if (!accounts || accounts.length === 0) {
+                const authContainer = document.getElementById('auth-container');
+                if (authContainer) authContainer.style.display = 'flex';
+                if (window.authComponent && window.authComponent.showAccountImport) {
+                    window.authComponent.showAccountImport();
+                }
+                return; // Do not proceed to close overlay
+            }
+
+            // Otherwise, ensure an active account is set and update UI
             const activeAccount = await window.api.spk.getActiveAccount();
             if (!activeAccount || !activeAccount.username) {
-                const accounts = await window.api.account.list();
-                if (accounts && accounts.length > 0) {
-                    console.log('Auto-setting first account as active:', accounts[0].username);
-                    await window.api.account.setActive(accounts[0].username);
-                    currentAccount = accounts[0].username;
-                    window.currentAccount = currentAccount;
-                    updateAccountDisplay();
-                }
+                console.log('No active account set, selecting first available');
+                await window.api.account.setActive(accounts[0].username);
+                currentAccount = accounts[0].username;
+                window.currentAccount = currentAccount;
+                updateAccountDisplay();
             } else {
                 currentAccount = activeAccount.username;
                 window.currentAccount = currentAccount;
                 updateAccountDisplay();
             }
         } catch (error) {
-            console.warn('Failed to check/set active account:', error);
+            console.warn('Failed after unlock to prepare account state:', error);
         }
-        
+
         // Close the auth overlay and return to the main app
         window.authComponent.closeAccountManager();
     });

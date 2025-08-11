@@ -23,6 +23,34 @@ let tray;
 let services = {};
 
 /**
+ * Resolve the storage node account username, preferring the running node config,
+ * then falling back to the persisted POA service config if available.
+ */
+async function resolveStorageAccountUsername() {
+  try {
+    // Prefer the in-memory storage node config if present
+    const configured = services?.storageNode?.config?.account;
+    if (configured && typeof configured === 'string' && configured.length > 0) {
+      return configured;
+    }
+  } catch (_) {}
+
+  // Fallback: read from persisted POA service config (~/.oratr/poa-service.json)
+  try {
+    const os = require('os');
+    const fs = require('fs').promises;
+    const configPath = path.join(os.homedir(), '.oratr', 'poa-service.json');
+    const data = await fs.readFile(configPath, 'utf8');
+    const json = JSON.parse(data || '{}');
+    if (json && typeof json.account === 'string' && json.account.length > 0) {
+      return json.account;
+    }
+  } catch (_) {}
+
+  return null;
+}
+
+/**
  * Create the main application window
  */
 function createWindow() {
@@ -667,15 +695,11 @@ function setupIPCHandlers() {
     return `${vests.toFixed(6)} VESTS`;
   }
 
-  async function getActiveUsername() {
-    const active = await services.spkClient.getActiveAccount();
-    if (!active) throw new Error('No active account');
-    return typeof active === 'string' ? active : active.username;
-  }
-
   ipcMain.handle('hive:transfer', async (event, { to, amount, asset, memo = '' }) => {
     try {
-      const from = await getActiveUsername();
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const from = active.username;
       const op = ['transfer', { from, to, amount: formatAssetAmount(amount, asset || 'HIVE'), memo }];
       const tx = { operations: [op] };
       const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
@@ -687,7 +711,9 @@ function setupIPCHandlers() {
 
   ipcMain.handle('hive:powerUp', async (event, { to = null, amount }) => {
     try {
-      const from = await getActiveUsername();
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const from = active.username;
       const op = ['transfer_to_vesting', { from, to: to || from, amount: formatAssetAmount(amount, 'HIVE') }];
       const tx = { operations: [op] };
       const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
@@ -699,7 +725,9 @@ function setupIPCHandlers() {
 
   ipcMain.handle('hive:powerDown', async (event, { hpAmount }) => {
     try {
-      const account = await getActiveUsername();
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const account = active.username;
       const vesting_shares = await hpToVests(hpAmount);
       const op = ['withdraw_vesting', { account, vesting_shares }];
       const tx = { operations: [op] };
@@ -712,7 +740,9 @@ function setupIPCHandlers() {
 
   ipcMain.handle('hive:delegateHP', async (event, { delegatee, hpAmount }) => {
     try {
-      const delegator = await getActiveUsername();
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const delegator = active.username;
       const vesting_shares = await hpToVests(hpAmount);
       const op = ['delegate_vesting_shares', { delegator, delegatee, vesting_shares }];
       const tx = { operations: [op] };
@@ -725,7 +755,9 @@ function setupIPCHandlers() {
 
   ipcMain.handle('hive:claimRewards', async () => {
     try {
-      const account = await getActiveUsername();
+      const active = await services.spkClient.getActiveAccount();
+      if (!active || !active.username) throw new Error('No active account');
+      const account = active.username;
       // Fetch current pending rewards
       const accounts = await hiveClient.database.getAccounts([account]);
       const a = accounts[0];
@@ -765,18 +797,6 @@ function setupIPCHandlers() {
       const tx = { operations: [op] };
       const result = await services.spkClient.accountManager.signAndBroadcast(from, tx, 'active');
       return { success: true, result };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  // Hive account lookup
-  ipcMain.handle('hive:getAccount', async (event, { username }) => {
-    try {
-      if (!username || typeof username !== 'string') throw new Error('Invalid username');
-      const accs = await hiveClient.database.getAccounts([username]);
-      const account = accs && accs[0] && accs[0].name ? accs[0] : null;
-      return { success: true, exists: !!account, account };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -1459,10 +1479,11 @@ function setupIPCHandlers() {
     try {
       const settings = await services.settingsManager.getSettings();
       const ipfsConfig = await services.ipfsManager.getConfig();
+      const storageAccount = await resolveStorageAccountUsername();
       const active = await services.spkClient.getActiveAccount();
       return {
         autoStart: Boolean(settings.autoStartStorage),
-        account: active?.username || active || null,
+        account: storageAccount || active?.username || active || null,
         ipfsHost: ipfsConfig.host || '127.0.0.1',
         ipfsPort: ipfsConfig.port || 5001,
         spkApiUrl: services.spkClient.config?.spkNode || 'https://spktest.dlux.io'
@@ -1664,6 +1685,14 @@ function setupIPCHandlers() {
   // Storage node operations
   ipcMain.handle('spk:storeFiles', async (event, contractIds) => {
     try {
+      // Ensure current user is set from storage node account
+      const storageUser = await resolveStorageAccountUsername();
+      if (storageUser) {
+        await services.spkClient.setCurrentUser(storageUser);
+      }
+      if (!services.spkClient.currentUser) {
+        throw new Error('No storage node account configured. Start POA or set the storage account in settings.');
+      }
       const result = await services.spkClient.storeFiles(contractIds);
       return { success: true, result };
     } catch (error) {
@@ -1673,6 +1702,14 @@ function setupIPCHandlers() {
 
   ipcMain.handle('spk:removeFiles', async (event, contractIds) => {
     try {
+      // Ensure current user is set from storage node account
+      const storageUser = await resolveStorageAccountUsername();
+      if (storageUser) {
+        await services.spkClient.setCurrentUser(storageUser);
+      }
+      if (!services.spkClient.currentUser) {
+        throw new Error('No storage node account configured. Start POA or set the storage account in settings.');
+      }
       const result = await services.spkClient.removeFiles(contractIds);
       return { success: true, result };
     } catch (error) {
@@ -1682,6 +1719,14 @@ function setupIPCHandlers() {
 
   ipcMain.handle('spk:batchStore', async (event, contractIds, chunkSize = 40) => {
     try {
+      // Ensure current user is set from storage node account
+      const storageUser = await resolveStorageAccountUsername();
+      if (storageUser) {
+        await services.spkClient.setCurrentUser(storageUser);
+      }
+      if (!services.spkClient.currentUser) {
+        throw new Error('No storage node account configured. Start POA or set the storage account in settings.');
+      }
       const result = await services.spkClient.batchStore(contractIds, chunkSize);
       return { success: true, result };
     } catch (error) {

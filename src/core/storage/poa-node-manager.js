@@ -98,6 +98,7 @@ class POANodeManager extends EventEmitter {
     }
     
     // 2. Check electron app resources (for production)
+    // Note: Do not write to resources; only read here. Writes occur in user directory.
     if (process.resourcesPath) {
       const platform = os.platform();
       const arch = os.arch();
@@ -118,7 +119,16 @@ class POANodeManager extends EventEmitter {
     }
     
     // 3. Check development locations
-    const devBinPath = path.join(__dirname, '..', '..', '..', 'bin');
+    // Prefer user data bin for development/runtime installs
+    let devBinPath;
+    try {
+      const electron = require('electron');
+      const app = electron?.app || electron?.remote?.app;
+      if (app && typeof app.getPath === 'function') {
+        devBinPath = path.join(app.getPath('userData'), 'bin');
+      }
+    } catch (_) {}
+    devBinPath = devBinPath || path.join(os.homedir(), '.oratr', 'bin');
     const platform = os.platform();
     const arch = os.arch();
     let devBinaryName = 'proofofaccess';
@@ -299,8 +309,19 @@ class POANodeManager extends EventEmitter {
         message: 'POA binary not found, attempting to download...' 
       });
       
+      // Download into user data bin directory, not app bundle
+      let userBinDir;
+      try {
+        const electron = require('electron');
+        const app = electron?.app || electron?.remote?.app;
+        if (app && typeof app.getPath === 'function') {
+          userBinDir = path.join(app.getPath('userData'), 'bin');
+        }
+      } catch (_) {}
+      userBinDir = userBinDir || path.join(os.homedir(), '.oratr', 'bin');
+
       const targetPath = path.join(
-        __dirname, '..', '..', '..', 'bin',
+        userBinDir,
         `proofofaccess-${os.platform()}-${os.arch()}${os.platform() === 'win32' ? '.exe' : ''}`
       );
       

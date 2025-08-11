@@ -2,6 +2,24 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
+function getUserDataDir() {
+  try {
+    // Lazy require to avoid issues when running outside Electron
+    const electron = require('electron');
+    const app = electron?.app || electron?.remote?.app;
+    if (app && typeof app.getPath === 'function') {
+      return app.getPath('userData');
+    }
+  } catch (_) {
+    // ignore, fall back to homedir
+  }
+  return path.join(os.homedir(), '.oratr');
+}
+
+function getUserBinDir() {
+  return path.join(getUserDataDir(), 'bin');
+}
+
 /**
  * ProofOfAccess binary wrapper
  * Provides platform-specific binary path resolution
@@ -69,8 +87,15 @@ class ProofOfAccessBinary {
       // Package not installed, fall back to bundled binary
     }
     
-    // Check for bundled binary in electron app
+    // Prefer user-scoped install location first (never modify app bundle)
     const binaryName = this.getBinaryName();
+    const userBinCandidate = path.join(getUserBinDir(), binaryName);
+    if (fs.existsSync(userBinCandidate)) {
+      return userBinCandidate;
+    }
+
+    // Check for bundled binary in electron app
+    
     
     // In production, binaries are in resources/bin
     if (process.resourcesPath) {
@@ -124,7 +149,7 @@ class ProofOfAccessBinary {
   static async downloadBinary() {
     const axios = require('axios');
     const binaryName = this.getBinaryName();
-    const binDir = path.join(__dirname, '..', '..', '..', 'bin');
+    const binDir = getUserBinDir();
     const binaryPath = path.join(binDir, binaryName);
     
     // Create bin directory if it doesn't exist
@@ -135,7 +160,7 @@ class ProofOfAccessBinary {
     const baseUrl = 'https://github.com/spknetwork/proofofaccess/releases/download';
     const downloadUrl = `${baseUrl}/${version}/${binaryName}`;
     
-    console.log(`Downloading ProofOfAccess binary from ${downloadUrl}...`);
+    console.log(`Downloading ProofOfAccess binary to user directory from ${downloadUrl}...`);
     
     try {
       const response = await axios({

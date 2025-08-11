@@ -14,6 +14,8 @@ Welcome to the Oratr docs. Select a document from the left, or start here.
 - [AUXILIARY_FILES_GUIDE](./AUXILIARY_FILES_GUIDE.md)
 - [ACCOUNT_SETUP_FIXES](./ACCOUNT_SETUP_FIXES.md)
 - [POA_INTEGRATION](./POA_INTEGRATION.md)
+- [SPK Network diagrams](./spk-network-diagrams.md)
+- [PoA lottery deep dive](./POA_LOTTERY_DEEP_DIVE.md)
 
 ---
 

@@ -201,6 +201,14 @@ class SettingsModal {
                     <div><strong>Listening on:</strong> <span id="webdav-listen">-</span></div>
                   </div>
                 </div>
+                <div class="setting-group">
+                  <label>Mount URL:</label>
+                  <div class="path-input">
+                    <input type="text" id="webdav-mount-url" readonly>
+                    <button id="copy-webdav-url">Copy</button>
+                  </div>
+                  <small>Use this URL in your OS WebDAV client (replace <username> if blank).</small>
+                </div>
               </div>
               
               <!-- The UI and Advanced panels are still supported; they will render if switchTab is invoked via code -->
@@ -571,6 +579,31 @@ class SettingsModal {
       }
     });
 
+    // Copy WebDAV mount URL
+    this.modal.addEventListener('click', async (e) => {
+      const target = e.target;
+      if (target && target.id === 'copy-webdav-url') {
+        const input = document.getElementById('webdav-mount-url');
+        if (!input || !input.value) return;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(input.value);
+          } else {
+            input.select();
+            document.execCommand('copy');
+          }
+          const original = target.textContent;
+          target.textContent = 'Copied!';
+          setTimeout(() => { target.textContent = original; }, 1200);
+        } catch (_) {}
+      }
+    });
+
+    // Update mount URL when active account changes
+    window.addEventListener('active-account-changed', () => {
+      this.refreshWebDavMountUrl().catch(()=>{});
+    });
+
     // Auto-save on input changes
     this.modal.addEventListener('input', (e) => {
       if (e.target.matches('input, select')) {
@@ -660,6 +693,7 @@ class SettingsModal {
     webdavPassEl.value = settings.webdavPassword || '';
     document.getElementById('webdav-auth-credentials').style.display = webdavRequireAuthEl.checked ? 'block' : 'none';
     this.refreshWebDavStatus();
+    this.refreshWebDavMountUrl();
 
     // UI settings
     document.getElementById('theme').value = settings.theme;
@@ -747,6 +781,7 @@ class SettingsModal {
           await window.api.invoke('webdav:stop');
         }
         this.refreshWebDavStatus();
+        this.refreshWebDavMountUrl();
       }
     } catch (error) {
       console.error('Failed to save setting:', error);
@@ -792,6 +827,22 @@ class SettingsModal {
       const status = await window.api.invoke('webdav:status');
       document.getElementById('webdav-running').textContent = status.running ? 'Yes' : 'No';
       document.getElementById('webdav-listen').textContent = status.running ? `http://127.0.0.1:${status.port}` : '-';
+    } catch (_) {}
+  }
+
+  async refreshWebDavMountUrl() {
+    try {
+      const status = await window.api.invoke('webdav:status');
+      const port = Number(status?.port || this.currentSettings.webdavPort || 4819);
+      let username = '';
+      try {
+        const active = await window.api.account.getActive();
+        username = active?.username || '';
+      } catch (_) {}
+      const userSegment = username || '<username>';
+      const url = `http://127.0.0.1:${port}/${encodeURIComponent(userSegment)}`;
+      const input = document.getElementById('webdav-mount-url');
+      if (input) input.value = url;
     } catch (_) {}
   }
 

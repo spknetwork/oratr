@@ -42,7 +42,7 @@ class WebDavService {
           ctx.response.setHeader('WWW-Authenticate', 'Basic realm="Oratr", charset="UTF-8"');
           ctx.response.setHeader('DAV', '1,2');
           ctx.response.setHeader('MS-Author-Via', 'DAV');
-          return ctx.end();
+          return ctx.response.end();
         }
         try {
           const match = String(authHeader).match(/^Basic\s+([A-Za-z0-9+/=]+)/i);
@@ -51,11 +51,11 @@ class WebDavService {
           const [user, pass] = decoded.split(':');
           if (this.username && (user !== this.username || pass !== this.password)) {
             ctx.setCode(webdav.HTTPCodes.Unauthorized);
-            return ctx.end();
+            return ctx.response.end();
           }
         } catch (_) {
           ctx.setCode(webdav.HTTPCodes.Unauthorized);
-          return ctx.end();
+          return ctx.response.end();
         }
       } else {
         // If auth not required, some DAV clients still probe: provide challenge only for PROPFIND/HEAD/GET without creds
@@ -77,7 +77,7 @@ class WebDavService {
           ctx.response.setHeader('MS-Author-Via', 'DAV');
           ctx.response.setHeader('Content-Length', Buffer.byteLength(xml, 'utf8'));
             if (method !== 'HEAD') ctx.response.write(xml);
-            return ctx.end();
+            return ctx.response.end();
           }
           const username = parts[0];
           const subPath = parts.slice(1).join('/');
@@ -97,10 +97,10 @@ class WebDavService {
           ctx.response.setHeader('MS-Author-Via', 'DAV');
           ctx.response.setHeader('Content-Length', Buffer.byteLength(xml, 'utf8'));
           if (method !== 'HEAD') ctx.response.write(xml);
-          return ctx.end();
+          return ctx.response.end();
         } catch (e) {
           ctx.setCode(webdav.HTTPCodes.NotFound);
-          return ctx.end();
+          return ctx.response.end();
         }
       }
 
@@ -118,7 +118,7 @@ class WebDavService {
             const url = `https://honeygraph.dlux.io/fs/${encodeURIComponent(username)}/${encodeURI(subPath)}`;
             ctx.setCode(webdav.HTTPCodes.MovedPermanently);
             ctx.response.setHeader('Location', url);
-            return ctx.end();
+            return ctx.response.end();
           }
         } catch (e) {
           // Fall through
@@ -146,6 +146,34 @@ class WebDavService {
           // Simple GET redirect handler before WebDAV processing
           if (req.method === 'GET') {
             const parsed = new URL(req.url, 'http://127.0.0.1');
+
+            // Thumbnail proxy: /_thumb/:cid
+            if (parsed.pathname.startsWith('/_thumb/')) {
+              const cid = decodeURIComponent(parsed.pathname.substring('/_thumb/'.length)).replace(/\/+$/, '');
+              // Basic CID validation (Base58btc-ish conservative)
+              if (!cid || !/^[A-Za-z0-9]+$/.test(cid)) {
+                res.statusCode = 400;
+                res.end('Bad thumbnail CID');
+                return;
+              }
+              try {
+                const upstream = await axios.get(`https://ipfs.dlux.io/ipfs/${encodeURIComponent(cid)}`, {
+                  responseType: 'stream',
+                  maxRedirects: 5
+                });
+                res.statusCode = upstream.status;
+                const ct = upstream.headers['content-type'] || 'image/jpeg';
+                const cl = upstream.headers['content-length'];
+                res.setHeader('Content-Type', ct);
+                if (cl) res.setHeader('Content-Length', cl);
+                res.setHeader('Cache-Control', 'public, max-age=86400');
+                upstream.data.pipe(res);
+              } catch (e) {
+                res.statusCode = 404;
+                res.end('Thumbnail Not Found');
+              }
+              return;
+            }
             const parts = parsed.pathname.split('/').filter(Boolean);
             // Directory listing in browser
             if (parts.length >= 1) {
@@ -177,7 +205,12 @@ class WebDavService {
                         const display = dir ? item.name : combineName(item.name, item.extension);
                         const hrefName = dir ? item.name : combineName(item.name, item.extension);
                         const href = '/' + [username].concat(subPath ? [subPath] : []).concat([encodeURIComponent(hrefName) + (dir ? '/' : '')]).join('/');
-                        const icon = dir ? '📁' : '📄';
+                        const thumbCid = !dir && item.thumbnail ? String(item.thumbnail) : '';
+                        const icon = dir
+                          ? '📁'
+                          : (thumbCid
+                              ? `<img src="/_thumb/${encodeURIComponent(thumbCid)}" alt="thumb" width="32" height="32" style="object-fit:cover;vertical-align:middle;border-radius:4px" loading="lazy">`
+                              : '📄');
                         const size = dir ? '' : ` (${item.size || 0} bytes)`;
                         return `<li>${icon} <a href="${href}">${escapeHtml(display)}</a>${size}</li>`;
                       })
@@ -297,15 +330,17 @@ function buildMultiStatus(hrefBase, items, includeSelf) {
     const name = item.name || 'unknown';
     const href = hrefBase + encodeURIComponent(name) + (isDir ? '/' : '');
     const size = isDir ? 0 : item.size || 0;
-    responses.push(responseXml(href, isDir, size, item.mimeType || 'application/octet-stream'));
+    const thumbCid = !isDir && item.thumbnail ? String(item.thumbnail) : '';
+    const thumbHref = thumbCid ? '/_thumb/' + encodeURIComponent(thumbCid) : '';
+    responses.push(responseXml(href, isDir, size, item.mimeType || 'application/octet-stream', thumbHref));
   }
   return `<?xml version="1.0" encoding="utf-8"?>
-<d:multistatus xmlns:d="DAV:">
+<d:multistatus xmlns:d="DAV:" xmlns:o="urn:oratr">
 ${responses.join('\n')}
 </d:multistatus>`;
 }
 
-function responseXml(href, isCollection, size = 0, contentType = 'application/octet-stream') {
+function responseXml(href, isCollection, size = 0, contentType = 'application/octet-stream', thumbnailHref = '') {
   return `<d:response>
   <d:href>${xmlEscape(href)}</d:href>
   <d:propstat>
@@ -314,6 +349,7 @@ function responseXml(href, isCollection, size = 0, contentType = 'application/oc
       ${isCollection ? '<d:resourcetype><d:collection/></d:resourcetype>' : '<d:resourcetype/>'}
       ${!isCollection ? `<d:getcontentlength>${size}</d:getcontentlength>
       <d:getcontenttype>${xmlEscape(contentType)}</d:getcontenttype>` : ''}
+      ${thumbnailHref ? `<o:thumbnail-href>${xmlEscape(thumbnailHref)}</o:thumbnail-href>` : ''}
     </d:prop>
     <d:status>HTTP/1.1 200 OK</d:status>
   </d:propstat>

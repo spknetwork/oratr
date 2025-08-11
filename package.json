@@ -71,6 +71,7 @@
     "webdav-server": "^2.6.2",
     "which": "^4.0.0",
     "winston": "^3.11.0",
+    "verror": "^1.10.0",
     "ws": "^8.18.3"
   },
   "build": {
@@ -112,7 +113,15 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Oratr may access the camera for recording if you enable related features.",
+        "NSMicrophoneUsageDescription": "Oratr may access the microphone for recording if you enable related features."
+      }
     },
     "win": {
       "icon": "resources/images/icons/win/icon.ico",
